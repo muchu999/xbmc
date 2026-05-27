@@ -62,6 +62,7 @@ public:
 protected:
   explicit CRendererPL(CVideoSettings& videoSettings);
 
+  CRect ApplyTransforms(const CRect& destRect) const;
   void CheckVideoParameters() override;
   void RenderImpl(CD3DTexture& target,
                   CRect& sourceRect,
@@ -76,7 +77,8 @@ private:
   pl_chroma_location m_chromaLocation;
   PL::pl_d3d_format m_plOutputFormat;
 
-  pl_render_params m_plRenderParams;
+  //pl_render_params m_plRenderParams;
+  pl_options m_plOptions = NULL;
 
   bool m_bTargetColorspaceHint = true;
   //For debug info
@@ -102,6 +104,7 @@ public:
   explicit CRenderBufferImpl(AVPixelFormat av_pix_format, unsigned width, unsigned height);
   ~CRenderBufferImpl();
 
+  void ReleasePicture() override;
   void AppendPicture(const VideoPicture& picture) override;
   bool UploadBuffer() override;
   bool GetLibplaceboFrame(pl_frame& frame);

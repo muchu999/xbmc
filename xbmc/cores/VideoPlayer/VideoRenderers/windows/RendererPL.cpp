@@ -18,6 +18,10 @@
 #include "windowing/GraphicContext.h"
 
 #include <ppl.h>
+#include <libplacebo/options.h>
+#include <libplacebo/renderer.h>
+#include <libplacebo/shaders/colorspace.h>
+#include <cmath>
 
 using namespace Microsoft::WRL;
 
@@ -52,10 +56,16 @@ CRendererPL::CRendererPL(CVideoSettings& videoSettings) : CRendererBase(videoSet
   m_renderMethodName = "LibPlacebo";
   m_colorSpace = {};
   m_chromaLocation = PL_CHROMA_UNKNOWN;
+  m_plOptions = pl_options_alloc(NULL);
+  pl_options_reset(m_plOptions, &pl_render_default_params);
 }
 
 CRendererPL::~CRendererPL()
 {
+  if(m_plOptions)
+	pl_options_free(&m_plOptions);
+  m_plOptions = nullptr;
+
   PL::PLInstance::Get()->Reset();
 }
 
@@ -155,7 +165,6 @@ void CRendererPL::CheckVideoParameters()
 
   PL::PLInstance::Get()->fill_d3d_format(&m_plOutputFormat, m_IntermediateTarget.GetFormat());
   
-  m_plRenderParams = pl_render_default_params;
   PL::pl_tone_mapping method;
   switch (m_videoSettings.m_ToneMapMethod)
   {
@@ -172,19 +181,21 @@ void CRendererPL::CheckVideoParameters()
     default:
       method = PL::TONE_MAPPING_AUTO;
       break;
-
   }
-  //m_videoSettings.m_ToneMapParam
-  //This one was deprecated and should modify tone_constants
-  //it consist of 11 float settings 
-  pl_color_map_params params = pl_color_map_high_quality_params;
-  params = {
+
+  //pl_options_reset(m_plOptions, &pl_render_default_params);
+  m_plOptions->color_map_params = pl_color_map_high_quality_params;
+  m_plOptions->color_map_params.tone_mapping_function = PL::PLInstance::Get()->GetToneMappingFunction(method);
+  m_plOptions->color_adjustment.brightness = m_videoSettings.m_Brightness/50.0 -1.0;
+  m_plOptions->color_adjustment.contrast = (pow(10.0, (m_videoSettings.m_Contrast - 50.0) / 25.0) - 0.01) * 100.0 / 99.99;
+  m_plOptions->color_adjustment.gamma = (pow(10.0, (m_videoSettings.m_Gamma - 20.0) / 40.0) - pow(10, -0.5)) * 1.0 / (1.0 - pow(10, -0.5));
+  //params = {
     //const struct pl_gamut_map_function *gamut_mapping;
     //struct pl_gamut_map_constants gamut_constants;
     //int lut3d_size[3];
     //bool lut3d_tricubic;
     //bool gamut_expansion;
-    .tone_mapping_function = PL::PLInstance::Get()->GetToneMappingFunction(method),
+    //.tone_mapping_function = PL::PLInstance::Get()->GetToneMappingFunction(method),
     //struct pl_tone_map_constants tone_constants;
     //bool inverse_tone_mapping;
     //enum pl_hdr_metadata_type metadata;
@@ -197,24 +208,54 @@ void CRendererPL::CheckVideoParameters()
     //float visualize_hue;    // useful range [-pi, pi]
     //float visualize_theta;  // useful range [0, pi/2]
     //bool show_clipping;
-  };
-  m_plRenderParams.color_map_params = &params;
+    //};
 
   //To avoid spam on the debug log
-  m_plRenderParams.border = PL_CLEAR_SKIP;
-  
-  
+  m_plOptions->params.border = PL_CLEAR_SKIP;
+ }
 
+CRect CRendererPL::ApplyTransforms(const CRect& destRect) const
+{
+  CRect result;
+  CPoint rotated [4];
+  ReorderDrawPoints(destRect, rotated);
+
+  switch(m_renderOrientation)
+  {
+  case 90:
+	result = {rotated [3], rotated [1]};
+	break;
+  case 180:
+	result = destRect;
+	break;
+  case 270:
+	result = {rotated [1], rotated [3]};
+	break;
+  default:
+	result = CServiceBroker::GetWinSystem()->GetGfxContext().StereoCorrection(destRect);
+	break;
+  }
+
+  return result;
 }
+
+void CRendererPL::CRenderBufferImpl::ReleasePicture()
+{
+  for(int i = 0; i < m_plFormat.num_planes; i++)
+  {
+	if(PL::PLInstance::Get()->GetD3d11()) //in case of reset
+	  pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &m_pltex [i]);
+  }
+
+  CRenderBuffer::ReleasePicture();
+}
+
 
 void CRendererPL::RenderImpl(CD3DTexture& target,
                              CRect& sourceRect,
                              CPoint (&destPoints)[4],
                              uint32_t flags)
 {
-
-  CRect dst = CRect(destPoints[0], destPoints[2]);
-  CPoint rotated[4];
   pl_frame frameOut{};
   pl_frame frameIn{};
   CRenderBuffer* buf = m_renderBuffers[m_iBufferIndex];
@@ -269,10 +310,13 @@ void CRendererPL::RenderImpl(CD3DTexture& target,
   frameOut.planes[0].component_mapping[2] = m_plOutputFormat.component_mapping[0][2];
   frameOut.planes[0].component_mapping[3] = m_plOutputFormat.component_mapping[0][3];
 
+  CRect dst = ApplyTransforms(CRect(destPoints [0], destPoints [2])); //uses m_renderOrientation
   frameOut.crop.x0 = dst.x1;
   frameOut.crop.x1 = dst.x2;
   frameOut.crop.y0 = dst.y1;
   frameOut.crop.y1 = dst.y2;
+  frameOut.rotation = m_renderOrientation == 90 ? PL_ROTATION_90 : m_renderOrientation == 180 ? PL_ROTATION_180 : m_renderOrientation == 270 ? PL_ROTATION_270 : PL_ROTATION_0;
+
   //We skip rendererbase process hdr so its important to set it if its not valid
   if (m_HdrType == HDR_TYPE::HDR_INVALID)
   {
@@ -312,26 +356,16 @@ void CRendererPL::RenderImpl(CD3DTexture& target,
   m_videoMatrix = frameIn.repr.sys;
   pl_frame_set_chroma_location(&frameIn, m_chromaLocation);
 
-  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, &m_plRenderParams);
+  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, &m_plOptions->params);
+  pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &frameOut.planes [0].texture);
 
   sourceRect = dst;
 }
 
 bool CRendererPL::Supports(ERENDERFEATURE feature) const
 {
-  //3d lut
-  //use 10bit for sdr in the menu
-  // dithering
-  //TODO
-  //Rotation is not done by libplacebo it expect a non rotated texture
-  //RENDERFEATURE_TONEMAP
-  if (feature == RENDERFEATURE_BRIGHTNESS || feature == RENDERFEATURE_CONTRAST ||
-      feature == RENDERFEATURE_GAMMA || feature == RENDERFEATURE_NONLINSTRETCH ||
-      feature == RENDERFEATURE_ROTATION || feature == RENDERFEATURE_NOISE || 
-      feature ==RENDERFEATURE_STRETCH || feature == RENDERFEATURE_PIXEL_RATIO || 
-      feature == RENDERFEATURE_VERTICAL_SHIFT || feature == RENDERFEATURE_ZOOM )
+  if(feature == RENDERFEATURE_NOISE )
   {
-
     return false;
   }
   else
