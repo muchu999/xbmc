@@ -89,6 +89,8 @@ public:
   virtual ~PLInstance();
   bool Init();
   void Reset();
+  bool CreateSwapchain(void);
+  void DestroySwapchain(void);
 
   pl_d3d11 GetD3d11() { return m_plD3d11; }
   pl_swapchain GetSwapchain() { return m_plSwapchain; }

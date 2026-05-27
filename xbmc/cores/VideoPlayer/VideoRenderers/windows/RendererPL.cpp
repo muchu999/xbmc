@@ -253,6 +253,15 @@ void CRendererPL::CRenderBufferImpl::ReleasePicture()
   CRenderBuffer::ReleasePicture();
 }
 
+void CRendererPL::PreToggleHdr()
+{
+  PL::PLInstance::Get()->DestroySwapchain();
+}
+
+void CRendererPL::PostToggleHdr()
+{
+  PL::PLInstance::Get()->CreateSwapchain();
+}
 
 void CRendererPL::RenderImpl(CD3DTexture& target,
                              CRect& sourceRect,

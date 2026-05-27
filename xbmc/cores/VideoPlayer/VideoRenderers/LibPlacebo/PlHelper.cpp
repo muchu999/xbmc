@@ -78,14 +78,9 @@ bool PL::PLInstance::Init()
   //this was added to libplacebo to handle multi threaded rendering for kodi
 
   m_plD3d11 = pl_d3d11_create(m_plLog, &d3d_param);
-  if (!m_plD3d11)
-    return false;
-  //swap chain
-  pl_d3d11_swapchain_params swapchain_param{};
-  swapchain_param.swapchain = DX::DeviceResources::Get()->GetSwapChain();
-  //everything else is not used
-  m_plSwapchain = pl_d3d11_create_swapchain(m_plD3d11, &swapchain_param);
-  if (!m_plSwapchain)
+  if(!m_plD3d11)
+	return false;
+  if (!CreateSwapchain())
     return false;
 
   m_plRenderer = pl_renderer_create(m_plLog, m_plD3d11->gpu);
@@ -93,6 +88,27 @@ bool PL::PLInstance::Init()
   return true;
 
 }
+
+void PL::PLInstance::DestroySwapchain(void)
+{
+  if(m_plSwapchain)
+  {
+    pl_swapchain_destroy(&m_plSwapchain);
+	m_plSwapchain = NULL;
+  }
+}
+
+bool PL::PLInstance::CreateSwapchain(void)
+{
+  pl_d3d11_swapchain_params swapchain_param {};
+  swapchain_param.swapchain = DX::DeviceResources::Get()->GetSwapChain();
+  //everything else is not used
+  m_plSwapchain = pl_d3d11_create_swapchain(m_plD3d11, &swapchain_param);
+  if(!m_plSwapchain)
+	return false;
+  return true;
+}
+
 void PL::PLInstance::Reset()
 {
   if (m_isInitialized)
