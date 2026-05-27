@@ -5021,7 +5021,7 @@ bool CVideoDatabase::GetVideoSettings(int idFile, CVideoSettings &settings)
       settings.m_SubtitleStream = m_pDS->fv("SubtitleStream").get_asInt();
       settings.m_ViewMode = m_pDS->fv("ViewMode").get_asInt();
       settings.m_ResumeTime = m_pDS->fv("ResumeTime").get_asInt();
-      settings.m_InterlaceMethod = (EINTERLACEMETHOD)m_pDS->fv("Deinterlace").get_asInt();
+      settings.m_InterlaceMethod = (EINTERLACEMETHOD)m_pDS->fv("DeinterlaceMode").get_asInt();
       settings.m_VolumeAmplification = m_pDS->fv("VolumeAmplification").get_asFloat();
       settings.m_ScalingMethod = (ESCALINGMETHOD)m_pDS->fv("ScalingMethod").get_asInt();
       settings.m_StereoMode = m_pDS->fv("StereoMode").get_asInt();
@@ -5069,7 +5069,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &setting)
       // update the item
       strSQL = PrepareSQL(
           "update settings set "
-          "Deinterlace=%i,ViewMode=%i,ZoomAmount=%f,PixelRatio=%f,VerticalShift=%f,"
+          "DeinterlaceMode=%i,ViewMode=%i,ZoomAmount=%f,PixelRatio=%f,VerticalShift=%f,"
           "AudioStream=%i,SubtitleStream=%i,SubtitleDelay=%f,SubtitlesOn=%i,Brightness=%f,Contrast="
           "%f,Gamma=%f,"
           "VolumeAmplification=%f,AudioDelay=%f,Sharpness=%f,NoiseReduction=%f,NonLinStretch=%i,"
@@ -5088,10 +5088,11 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &setting)
       std::string strSQL2;
 
       strSQL2 = PrepareSQL("ResumeTime=%i,StereoMode=%i,StereoInvert=%i,VideoStream=%i,"
-                           "TonemapMethod=%i,TonemapParam=%f where idFile=%i\n",
+                           "TonemapMethod=%i,TonemapParam=%f,Orientation=%i,CenterMixLevel=%i where idFile=%i\n",
                            setting.m_ResumeTime, setting.m_StereoMode, setting.m_StereoInvert,
                            setting.m_VideoStream, setting.m_ToneMapMethod,
-                           static_cast<double>(setting.m_ToneMapParam), idFile);
+                           static_cast<double>(setting.m_ToneMapParam), setting.m_Orientation, 
+		                   setting.m_CenterMixLevel, idFile);
       strSQL += strSQL2;
       m_pDS->exec(strSQL);
       return ;
@@ -5099,7 +5100,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &setting)
     else
     { // add the items
       m_pDS->close();
-      strSQL= "INSERT INTO settings (idFile,Deinterlace,ViewMode,ZoomAmount,PixelRatio, VerticalShift, "
+      strSQL= "INSERT INTO settings (idFile,DeinterlaceMode,ViewMode,ZoomAmount,PixelRatio, VerticalShift, "
                 "AudioStream,SubtitleStream,SubtitleDelay,SubtitlesOn,Brightness,"
                 "Contrast,Gamma,VolumeAmplification,AudioDelay,"
                 "ResumeTime,"

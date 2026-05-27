@@ -9,19 +9,16 @@
 #include "RendererPL.h"
 
 #include "DVDCodecs/Video/DVDVideoCodec.h"
-#include "VideoRenderers/BaseRenderer.h"
-#include "VideoRenderers/HwDecRender/DXVAEnumeratorHD.h"
-#include "WIN32Util.h"
 #include "rendering/dx/RenderContext.h"
 #include "utils/log.h"
-#include "utils/memcpy_sse2.h"
 #include "windowing/GraphicContext.h"
-
-#include <ppl.h>
+#include <VideoRenderers/RenderFlags.h>
+#include <cmath>
+#include <libplacebo/d3d11.h>
 #include <libplacebo/options.h>
 #include <libplacebo/renderer.h>
 #include <libplacebo/shaders/colorspace.h>
-#include <cmath>
+#include <libplacebo/shaders/deinterlacing.h>
 
 using namespace Microsoft::WRL;
 
@@ -210,6 +207,12 @@ void CRendererPL::CheckVideoParameters()
     //bool show_clipping;
     //};
 
+  //m_plOptions->deinterlace_params.algo =  ... just use default
+  if(m_videoSettings.m_InterlaceMethod != VS_INTERLACEMETHOD_NONE)
+	m_plOptions->params.deinterlace_params = &m_plOptions->deinterlace_params;
+  else
+	m_plOptions->params.deinterlace_params = NULL;
+
   //To avoid spam on the debug log
   m_plOptions->params.border = PL_CLEAR_SKIP;
  }
@@ -288,6 +291,38 @@ void CRendererPL::RenderImpl(CD3DTexture& target,
   }
   else
     m_colorSpace = frameIn.color;
+
+  // Interlacing
+  if(buffer->pictureFlags & DVP_FLAG_INTERLACED)
+  {
+	if((flags & RENDER_FLAG_FIELD0) && (flags & RENDER_FLAG_TOP))
+	{
+	  frameIn.field = PL_FIELD_TOP;
+	  frameIn.first_field = PL_FIELD_TOP;
+	}
+	else if((flags & RENDER_FLAG_FIELD1) && (flags & RENDER_FLAG_BOT))
+	{
+	  frameIn.field = PL_FIELD_BOTTOM;
+	  frameIn.first_field = PL_FIELD_TOP;
+	}
+	else if((flags & RENDER_FLAG_FIELD0) && (flags & RENDER_FLAG_BOT))
+	{
+	  frameIn.field = PL_FIELD_BOTTOM;
+	  frameIn.first_field = PL_FIELD_BOTTOM;
+	}
+	else if((flags & RENDER_FLAG_FIELD1) && (flags & RENDER_FLAG_TOP))
+	{
+	  frameIn.field = PL_FIELD_TOP;
+	  frameIn.first_field = PL_FIELD_BOTTOM;
+	}
+  }
+  else
+  {
+	frameIn.field = PL_FIELD_NONE;
+	frameIn.first_field = PL_FIELD_NONE;
+  }
+
+
 
   //TODO
   //Add icc profile
