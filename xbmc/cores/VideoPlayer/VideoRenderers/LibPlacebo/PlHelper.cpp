@@ -100,6 +100,9 @@ void PL::PLInstance::DestroySwapchain(void)
 
 bool PL::PLInstance::CreateSwapchain(void)
 {
+  if(!m_plD3d11)
+    return false;
+
   pl_d3d11_swapchain_params swapchain_param {};
   swapchain_param.swapchain = DX::DeviceResources::Get()->GetSwapChain();
   //everything else is not used

@@ -208,9 +208,8 @@ bool CRendererBase::Configure(const VideoPicture& picture, float fps, unsigned o
 
     if (streamIsHDR != DX::Windowing()->IsHDROutput())
 	{
-      PreToggleHdr();
-      DX::Windowing()->ToggleHDR();
-      PostToggleHdr();
+	  DX::Windowing()->ToggleHDR(); // no need to call Pre/PostToggleHdr as child Configure() 
+	                                // override will take care of swapchain wrap after we are done here
 	}
   }
 
