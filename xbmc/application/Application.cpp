@@ -848,6 +848,8 @@ void CApplication::Render()
     appPower->ResetScreenSaver();
   }
 
+  //if(!appPlayer->IsExternalPlaying())
+  //{
   if (!CServiceBroker::GetRenderSystem()->BeginRender())
     return;
 
@@ -880,6 +882,14 @@ void CApplication::Render()
   CServiceBroker::GetGUI()->GetWindowManager().RenderEx();
 
   CServiceBroker::GetRenderSystem()->EndRender();
+  //}
+  ////else
+  //{
+	//RESOLUTION res = CDisplaySettings::GetInstance().GetCurrentResolution();
+	//CServiceBroker::GetWinSystem()->GetGfxContext().SetVideoResolution(res, false);
+
+	//CServiceBroker::GetWinSystem()->GetGfxContext().Clear();
+  //}
 
   // reset our info cache - we do this at the end of Render so that it is
   // fresh for the next process(), or after a windowclose animation (where process()

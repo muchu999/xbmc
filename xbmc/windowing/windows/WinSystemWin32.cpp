@@ -198,7 +198,7 @@ bool CWinSystemWin32::CreateNewWindow(const std::string& name, bool fullScreen, 
   }
 
   HWND hWnd = CreateWindowExW(
-    m_windowExStyle,
+	m_windowExStyle, //cl WS_EX_LAYERED | m_windowExStyle
     nameW.c_str(),
     nameW.c_str(),
     m_windowStyle,
@@ -217,6 +217,8 @@ bool CWinSystemWin32::CreateNewWindow(const std::string& name, bool fullScreen, 
     CLog::LogF(LOGERROR, " CreateWindow failed with {}", GetLastError());
     return false;
   }
+
+  //cl SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 1, LWA_COLORKEY);
 
   m_inFocus = true;
 
@@ -276,8 +278,10 @@ bool CWinSystemWin32::CreateBlankWindows()
   // We need as many blank windows as there are screens (minus 1)
   for (size_t i = 0; i < m_displays.size() - 1; i++)
   {
-    HWND hBlankWindow = CreateWindowEx(WS_EX_TOPMOST, L"BlankWindowClass", L"", WS_POPUP | WS_DISABLED,
-    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, nullptr, nullptr);
+	HWND hBlankWindow = CreateWindowEx(WS_EX_TOPMOST, L"BlankWindowClass", L"", WS_POPUP | WS_DISABLED,
+	  //HWND hBlankWindow = CreateWindowEx(WS_EX_LAYERED|WS_EX_TOPMOST|WS_EX_TRANSPARENT, L"BlankWindowClass", L"", WS_POPUP | WS_DISABLED,
+		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, nullptr, nullptr);
+	//cl SetLayeredWindowAttributes(hBlankWindow, RGB(0, 0, 0), 1, LWA_COLORKEY);
 
     if (hBlankWindow == nullptr)
     {
@@ -1315,7 +1319,7 @@ void CWinSystemWin32::UpdateStates(bool fullScreen)
   else
   {
     m_windowStyle = WINDOWED_STYLE;
-    m_windowExStyle = WINDOWED_EX_STYLE;
+    m_windowExStyle = WINDOWED_EX_STYLE; //cl | WS_EX_LAYERED;
   }
 }
 
