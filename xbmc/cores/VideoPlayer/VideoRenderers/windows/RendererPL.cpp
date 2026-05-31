@@ -53,7 +53,7 @@ CRendererPL::CRendererPL(CVideoSettings& videoSettings) : CRendererBase(videoSet
   m_renderMethodName = "LibPlacebo";
   m_colorSpace = {};
   m_chromaLocation = PL_CHROMA_UNKNOWN;
-  m_plOptions = pl_options_alloc(NULL);
+  m_plOptions = pl_options_alloc(PL::PLInstance::Get()->m_plLog);
   pl_options_reset(m_plOptions, &pl_render_default_params);
 }
 
@@ -184,7 +184,7 @@ void CRendererPL::CheckVideoParameters()
   m_plOptions->color_map_params = pl_color_map_high_quality_params;
   m_plOptions->color_map_params.tone_mapping_function = PL::PLInstance::Get()->GetToneMappingFunction(method);
   m_plOptions->color_adjustment.brightness = m_videoSettings.m_Brightness/50.0 -1.0;
-  m_plOptions->color_adjustment.contrast = (pow(10.0, (m_videoSettings.m_Contrast - 50.0) / 25.0) - 0.01) * 100.0 / 99.99;
+  m_plOptions->color_adjustment.contrast = (pow(10.0, (m_videoSettings.m_Contrast - 50.0) / 25.0) - 0.01) * 100.0 / 99.0;
   m_plOptions->color_adjustment.gamma = (pow(10.0, (m_videoSettings.m_Gamma - 20.0) / 40.0) - pow(10, -0.5)) * 1.0 / (1.0 - pow(10, -0.5));
   //params = {
     //const struct pl_gamut_map_function *gamut_mapping;
