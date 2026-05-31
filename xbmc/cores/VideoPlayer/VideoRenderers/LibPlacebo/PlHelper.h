@@ -8,14 +8,11 @@
 
 #pragma once
 
+#include <libplacebo/cache.h>
 #include "libplacebo/colorspace.h"
 #include "libplacebo/d3d11.h"
 #include "libplacebo/log.h"
 #include "libplacebo/renderer.h"
-#include "libplacebo/utils/frame_queue.h"
-#include "libplacebo/utils/upload.h"
-
-#include <libplacebo/options.h>
 
 extern "C"
 {
@@ -96,11 +93,13 @@ public:
   pl_swapchain GetSwapchain() { return m_plSwapchain; }
   pl_renderer GetRenderer() { return m_plRenderer; }
   pl_gpu GetGpu() { return m_plD3d11->gpu; }
+  pl_cache* GetCache() { return &m_plCache; }
 
   pl_log m_plLog;
   pl_d3d11 m_plD3d11;
   pl_swapchain m_plSwapchain;
   pl_renderer m_plRenderer;
+  pl_cache m_plCache;
   int CurrentPrim;
   int Currenttransfer;
   int CurrentMatrix;

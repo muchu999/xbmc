@@ -8,6 +8,8 @@
 
 #include "PlHelper.h"
 
+#include <filesystem/Directory.h>
+#include <filesystem/SpecialProtocol.h>
 #include "rendering/dx/RenderContext.h"
 
 #include <mfobjects.h>
@@ -84,6 +86,23 @@ bool PL::PLInstance::Init()
     return false;
 
   m_plRenderer = pl_renderer_create(m_plLog, m_plD3d11->gpu);
+
+  // Cache
+  std::string cacheDirectory = "special://temp/LibplaceboCache/";
+  if(!XFILE::CDirectory::Exists(cacheDirectory))
+	XFILE::CDirectory::Create(cacheDirectory);
+  pl_cache_params cacheParams {};
+  cacheParams.log = PL::PLInstance::Get()->m_plLog;
+  cacheParams.max_object_size = 0;      // No limit on individual object size
+  cacheParams.max_total_size = 1 << 30; //cl 1 GB total cache size limit ?
+  cacheParams.set = pl_cache_set_file;
+  cacheParams.get = pl_cache_get_file;
+  static const std::string cacheDir = CSpecialProtocol::TranslatePath(cacheDirectory);
+  cacheParams.priv = (void*) cacheDir.c_str();
+
+  m_plCache = pl_cache_create(&cacheParams);
+  pl_gpu_set_cache(PL::PLInstance::Get()->GetGpu(), m_plCache);
+
   m_isInitialized = true;
   return true;
 
