@@ -189,6 +189,7 @@
 #ifdef HAS_OPTICAL_DRIVE
 #include <cdio/logging.h>
 #endif
+#include <rendering/dx/DeviceResources.h>
 
 using namespace ADDON;
 using namespace XFILE;
@@ -875,6 +876,10 @@ void CApplication::Render()
 
     m_lastRenderTime = std::chrono::steady_clock::now();
   }
+
+  //DWORD waitResult = WaitForSingleObjectEx(DX::DeviceResources::Get()->dxgiWaitHandle, 1000, TRUE);
+
+  //if(waitResult == WAIT_OBJECT_0) {
 
   // render video layer
   CServiceBroker::GetGUI()->GetWindowManager().RenderEx();
