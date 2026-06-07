@@ -829,7 +829,7 @@ void DX::DeviceResources::ResizeBuffers()
     swapChainDesc.SwapEffect = CSysInfo::IsWindowsVersionAtLeast(CSysInfo::WindowsVersionWin10)
                                    ? DXGI_SWAP_EFFECT_FLIP_DISCARD
                                    : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    swapChainDesc.Flags = windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH);
     swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
     swapChainDesc.SampleDesc.Count = 1;
     swapChainDesc.SampleDesc.Quality = 0;
@@ -849,6 +849,18 @@ void DX::DeviceResources::ResizeBuffers()
         CLog::LogF(LOGWARNING, "creating 10bit swapchain failed, fallback to 8bit.");
         swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
       }
+	  IDXGISwapChain2* swapChain2 = nullptr;
+	  HRESULT hr = swapChain->QueryInterface(__uuidof(IDXGISwapChain2), (void**) &swapChain2);
+	  if(SUCCEEDED(hr) && swapChain2) {
+		// Restrict queue depth to 1 frame to eliminate rendering lag
+		swapChain2->SetMaximumFrameLatency(1);
+
+		// Get the OS kernel wait object
+		ComPtr<IDXGIDevice1> dxgiDevice;
+		hr = m_d3dDevice.As(&dxgiDevice); CHECK_ERR();
+		dxgiWaitHandle = swapChain2->GetFrameLatencyWaitableObject();
+		swapChain2->Release();
+	  }
     }
 
     if (!swapChain)

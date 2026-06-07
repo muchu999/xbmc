@@ -1293,6 +1293,10 @@ void CRenderManager::PrepareNextRender()
  
   static double lastFrameOnScreen = 0;
   static double lastClock = 0;
+  // 1. Block right here until the DXGI hardware queue is ready to accept a frame
+  DWORD waitResult = WaitForSingleObjectEx(DX::DeviceResources::Get()->dxgiWaitHandle, 1000, TRUE);
+
+  //if(waitResult == WAIT_OBJECT_0) {
   double clock = m_dvdClock.GetClock();
   double frameOnScreen = synchPLL.process(fps, clock);
   double diff = frameOnScreen - lastFrameOnScreen;

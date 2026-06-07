@@ -52,7 +52,7 @@ namespace DX
 
   public:
     static std::shared_ptr<DX::DeviceResources> Get();
-
+	HANDLE dxgiWaitHandle = nullptr;
     DeviceResources();
     virtual ~DeviceResources();
     void Release();
