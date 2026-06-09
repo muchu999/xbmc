@@ -566,8 +566,32 @@ HRESULT DX::DeviceResources::CreateSwapChain(DXGI_SWAP_CHAIN_DESC1& desc, DXGI_S
   return hr;
 }
 
+size_t DX::DeviceResources::RegisterSwapchainListener(EventCallback callback)
+{
+  size_t id = nextId++;
+  listeners.push_back({id, callback});
+  return id;
+}
+
+void  DX::DeviceResources::UnregisterSwapchainListener(size_t id)
+{
+  listeners.erase(std::remove_if(listeners.begin(), listeners.end(),
+	[id](const auto& listener) { return listener.id == id; }),
+	listeners.end());
+}
+
+void DX::DeviceResources::NotifySwapchainListeners(const std::string& message) 
+{
+  for(const auto& entry : listeners) 
+  {
+	entry.callback(message);
+  }
+}
+
 void DX::DeviceResources::DestroySwapChain()
 {
+  NotifySwapchainListeners("DestroySwapChain");
+
   if (!m_swapChain)
     return;
 
@@ -608,10 +632,12 @@ void DX::DeviceResources::ResizeBuffers()
 
   if (m_swapChain) // If the swap chain already exists, resize it.
   {
+	NotifySwapchainListeners("DestroySwapChain");
     m_swapChain->GetDesc1(&scDesc);
     hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width),
                                     lround(m_outputSize.Height), scDesc.Format,
-                                    windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH);
+	  windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH);
+	NotifySwapchainListeners("CreateSwapChain");
 
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
     {
@@ -766,6 +792,8 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
   ResizeBuffers();
 
   CreateBackBuffer();
+
+  NotifySwapchainListeners("CreateSwapChain");
 }
 
 // Determine the dimensions of the render target and whether it will be scaled down.

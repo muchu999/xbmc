@@ -83,11 +83,14 @@ public:
   static std::shared_ptr<PLInstance> Get();
   PLInstance();
 
-  virtual ~PLInstance();
-  bool Init();
-  void Reset();
-  bool CreateSwapchain(void);
-  void DestroySwapchain(void);
+	virtual ~PLInstance();
+	bool Init();
+	void Reset();
+	bool CreateSwapchain(void);
+	void DestroySwapchain(void);
+	void SetupSwapchainCallback(DX::DeviceResources& publisher);
+	void OnSwapchainEventReceived(const std::string& message);
+	void TeardownSwapchainCallback(DX::DeviceResources& publisher);
 
   pl_d3d11 GetD3d11() { return m_plD3d11; }
   pl_swapchain GetSwapchain() { return m_plSwapchain; }
@@ -95,6 +98,7 @@ public:
   pl_gpu GetGpu() { return m_plD3d11->gpu; }
   pl_cache* GetCache() { return &m_plCache; }
 
+  size_t m_swapchainCallbackId; 
   pl_log m_plLog;
   pl_d3d11 m_plD3d11;
   pl_swapchain m_plSwapchain;
