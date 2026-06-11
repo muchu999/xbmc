@@ -63,7 +63,7 @@ CRendererPL::~CRendererPL()
 	pl_options_free(&m_plOptions);
   m_plOptions = nullptr;
 
-  pl_cache_destroy(PL::PLInstance::Get()->GetCache());
+  Flush(false); // Must free buffers before resetting libplacebo
   PL::PLInstance::Get()->Reset();
 }
 
