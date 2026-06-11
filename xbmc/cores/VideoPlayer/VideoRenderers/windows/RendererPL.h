@@ -50,9 +50,6 @@ public:
   CRenderInfo GetRenderInfo() override;
   bool Supports(ESCALINGMETHOD method) const override;
   bool Supports(ERENDERFEATURE feature) const override;
-  void PreToggleHdr() override;
-  void PostToggleHdr() override;
-
   bool WantsDoublePass() override { return true; }
   bool Configure(const VideoPicture& picture, float fps, unsigned orientation) override;
 

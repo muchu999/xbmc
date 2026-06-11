@@ -122,8 +122,6 @@ public:
 
   virtual bool WantsDoublePass() { return false; }
   virtual bool NeedBuffer(int idx) { return false; }
-  virtual void PreToggleHdr() { }
-  virtual void PostToggleHdr() { }
 
   void AddVideoPicture(const VideoPicture &picture, int index);
   void Render(int index, int index2, CD3DTexture& target, const CRect& sourceRect, 

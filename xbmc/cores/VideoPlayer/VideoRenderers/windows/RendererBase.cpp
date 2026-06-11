@@ -147,7 +147,7 @@ CRendererBase::~CRendererBase()
     if (m_initialHdrEnabled != DX::Windowing()->IsHDROutput())
     {
       CLog::LogF(LOGDEBUG, "Restoring {} rendering", m_initialHdrEnabled ? "HDR" : "SDR");
-      DX::Windowing()->ToggleHDR(); // No need to call PreToggleHdr as swap chain wrap is destroyed in child class destructor first.
+      DX::Windowing()->ToggleHDR();
     }
   }
   else // swap chain is not re-created, set proper color space
@@ -207,10 +207,7 @@ bool CRendererBase::Configure(const VideoPicture& picture, float fps, unsigned o
                               picture.color_transfer == AVCOL_TRC_ARIB_STD_B67);
 
     if (streamIsHDR != DX::Windowing()->IsHDROutput())
-	{
-	  DX::Windowing()->ToggleHDR(); // no need to call Pre/PostToggleHdr as child Configure() 
-	                                // override will take care of swapchain wrap after we are done here
-	}
+      DX::Windowing()->ToggleHDR();
   }
 
   return true;
@@ -593,9 +590,7 @@ void CRendererBase::ProcessHDR(CRenderBuffer* rb)
 
   if (m_AutoSwitchHDR && isHdrPicture && !DX::Windowing()->IsHDROutput())
   {
-	PreToggleHdr();
     DX::Windowing()->ToggleHDR(); // Toggle display HDR ON
-	PostToggleHdr();
   }
 
   if (!DX::Windowing()->IsHDROutput())
@@ -668,11 +663,7 @@ void CRendererBase::ProcessHDR(CRenderBuffer* rb)
       {
         // color space already sdr or set by the swap chain re-creation
         if (DX::Windowing()->IsHDROutput())
-		{
-		  PreToggleHdr();
-		  DX::Windowing()->ToggleHDR(); // Toggle display HDR OFF
-		  PostToggleHdr();
-		}
+          DX::Windowing()->ToggleHDR(); // Toggle display HDR OFF
       }
       else
       {
