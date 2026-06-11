@@ -29,6 +29,7 @@ extern "C"
 #include <libavutil/hdr_dynamic_metadata.h>
 #include <libavutil/mastering_display_metadata.h>
 #include <strmif.h>
+#include <rendering/dx/DeviceResources.h>
 
 #define MAX_FRAME_PASSES 256
 #define MAX_BLEND_PASSES 8
