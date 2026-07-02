@@ -290,6 +290,7 @@ private:
 	void StartPresentThread();
 	void StopPresentThread();
 public:
+  void KeepResourceAliveThisFrame(const Microsoft::WRL::ComPtr<IUnknown>& resource);
   HRESULT SignalFrameReady();
   void DrainPresentationQueue();
   int64_t GetLatestVsyncTime() const { return m_lastVsyncTimestamp.load(std::memory_order_acquire); }

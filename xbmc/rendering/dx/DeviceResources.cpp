@@ -2191,3 +2191,12 @@ void DX::DeviceResources::DrainPresentationQueue()
   m_renderCv.notify_all();
   m_presentCv.notify_all();
 }
+
+
+void DX::DeviceResources::KeepResourceAliveThisFrame(const Microsoft::WRL::ComPtr<IUnknown>& resource)
+{
+  if(!resource) return;
+
+  std::lock_guard<std::mutex> lock(m_lifelineMutex);
+  m_currentFrameLifelines.push_back(resource); // Locks the reference count up by +1
+}

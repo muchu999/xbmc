@@ -94,7 +94,7 @@ void CGUIFontTTFDX::LastEnd()
   pGUIShader->SetDepth(CServiceBroker::GetWinSystem()->GetGfxContext().GetTransformDepth());
 
   // Set font texture as shader resource
-  pGUIShader->SetShaderViews(1, m_speedupTexture->GetAddressOfSRV());
+  pGUIShader->SetShaderViews(1, m_speedupSRV.GetAddressOf());
   // Enable alpha blend
   DX::Windowing()->SetAlphaBlendEnable(true);
   // Set our static index buffer
@@ -235,7 +235,8 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
   if (m_textureHeight == 0)
   {
     m_texture.reset();
-    m_speedupTexture.reset();
+	m_speedupTexture = nullptr; // Clear the ComPtr safely
+	m_speedupSRV = nullptr;
   }
   m_staticCache.Flush();
   m_dynamicCache.Flush();
@@ -249,6 +250,27 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
     return nullptr;
   }
 
+  // 3. Extract the raw native D3D11 handles from Kodi's wrapper into your thread ComPtrs
+  // This satisfies your thread-safety lifeline queue requirements!
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> nativeTex = newSpeedupTexture->Get();
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nativeSRV;
+
+  // Fetch the internal Shader Resource View pointer address from the new speedup texture wrapper
+  if(newSpeedupTexture->GetAddressOfSRV())
+  {
+	nativeSRV = *(newSpeedupTexture->GetAddressOfSRV());
+  }
+
+  // 4. Thread-Safely back up the OLD texture handles to your FIFO queue lifelines before moving pointers
+  if(m_speedupTexture)
+  {
+	Microsoft::WRL::ComPtr<IUnknown> textureLifeline;
+	Microsoft::WRL::ComPtr<IUnknown> srvLifeline;
+	if(SUCCEEDED(m_speedupTexture.As(&textureLifeline)))
+	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(textureLifeline);
+	if(m_speedupSRV && SUCCEEDED(m_speedupSRV.As(&srvLifeline)))
+	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(srvLifeline);
+  }
   
   ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetD3DContext();
   ComPtr<ID3D11Multithread> pMultithread;
@@ -268,7 +290,7 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
   {
     CD3D11_BOX rect(0, 0, 0, m_textureWidth, m_textureHeight, 1);
     ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
-    pContext->CopySubresourceRegion(newSpeedupTexture->Get(), 0, 0, 0, 0, m_speedupTexture->Get(),
+    pContext->CopySubresourceRegion(newSpeedupTexture->Get(), 0, 0, 0, 0, m_speedupTexture.Get(),
                                     0, &rect);
   }
 
@@ -276,7 +298,13 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
 
   m_textureHeight = newHeight;
   m_textureScaleY = 1.0f / m_textureHeight;
-  m_speedupTexture = std::move(newSpeedupTexture);
+
+  m_speedupTexture = nativeTex;
+  m_speedupSRV = nativeSRV;
+
+  // Crucial: Move the newly created wrapper object into your persistent class instance
+  m_speedupTextureClassWrapper = std::move(newSpeedupTexture);
+
 
   // 2. Safely release the lock after pointers are fully updated and swapped
   if(isLocked && pMultithread)
@@ -303,10 +331,10 @@ bool CGUIFontTTFDX::CopyCharToTexture(
 	pMultithread->Enter();
 	isLocked = true;
   }
-  if (m_speedupTexture && m_speedupTexture->Get() && pContext && bitmap.buffer)
+  if (m_speedupTexture && m_speedupTexture.Get() && pContext && bitmap.buffer)
   {
     CD3D11_BOX dstBox(x1, y1, 0, x2, y2, 1);
-    pContext->UpdateSubresource(m_speedupTexture->Get(), 0, &dstBox, bitmap.buffer, bitmap.pitch,
+    pContext->UpdateSubresource(m_speedupTexture.Get(), 0, &dstBox, bitmap.buffer, bitmap.pitch,
                                 0);
 	// 2. Safely release the lock after pointers are fully updated and swapped
 	if(isLocked && pMultithread)
