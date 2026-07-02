@@ -272,26 +272,19 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
 	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(srvLifeline);
   }
   
-  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetD3DContext();
-  ComPtr<ID3D11Multithread> pMultithread;
-  bool isLocked = false;
-  
-  if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+  // 5. Context Synchronization: Pass data from the previous allocation if it exists
+  if(newSpeedupTexture && m_speedupTexture)
   {
-	// Force the Application Thread to freeze right here if the Present Thread
-	// is in the middle of drawing UI text with the current m_speedupTexture.
-	pMultithread->Enter();
-	isLocked = true;
-  }
-  
-  
-  // There might be data to copy from the previous texture
-  if (newSpeedupTexture && m_speedupTexture)
-  {
-    CD3D11_BOX rect(0, 0, 0, m_textureWidth, m_textureHeight, 1);
-    ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
-    pContext->CopySubresourceRegion(newSpeedupTexture->Get(), 0, 0, 0, 0, m_speedupTexture.Get(),
-                                    0, &rect);
+	CD3D11_BOX rect(0, 0, 0, m_textureWidth, m_textureHeight, 1);
+	ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+	ComPtr<ID3D11Multithread> pMultithread;
+
+	if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+	{
+	  pMultithread->Enter();
+	  pContext->CopySubresourceRegion(newSpeedupTexture->Get(), 0, 0, 0, 0, m_speedupTexture.Get(), 0, &rect);
+	  pMultithread->Leave();
+	}
   }
 
   m_texture.reset();
@@ -307,10 +300,10 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
 
 
   // 2. Safely release the lock after pointers are fully updated and swapped
-  if(isLocked && pMultithread)
-  {
-	pMultithread->Leave();
-  }
+  //if(isLocked && pMultithread)
+  //{
+  //pMultithread->Leave();
+  //}
   
   return pNewTexture;
 }
