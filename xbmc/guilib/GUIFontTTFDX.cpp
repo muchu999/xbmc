@@ -250,7 +250,7 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
   }
 
   
-  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetD3DContext();
   ComPtr<ID3D11Multithread> pMultithread;
   bool isLocked = false;
   
@@ -292,7 +292,7 @@ bool CGUIFontTTFDX::CopyCharToTexture(
 {
   FT_Bitmap bitmap = bitGlyph->bitmap;
 
-  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetD3DContext();
   ComPtr<ID3D11Multithread> pMultithread;
   bool isLocked = false;
 
