@@ -59,6 +59,7 @@ private:
 
   unsigned m_vertexWidth{0};
   //std::unique_ptr<CD3DTexture> m_speedupTexture; // extra texture to speed up reallocations
+  std::unique_ptr<CD3DTexture> m_speedupTextureClassWrapper;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> m_speedupTexture;
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_speedupSRV;
   Microsoft::WRL::ComPtr<ID3D11Buffer> m_vertexBuffer;

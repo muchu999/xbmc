@@ -232,119 +232,103 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
 {
   assert(newHeight != 0);
   assert(m_textureWidth != 0);
-  if (m_textureHeight == 0)
+  if(m_textureHeight == 0)
   {
-    m_texture.reset();
-    m_speedupTexture.Reset();
+	m_texture.reset();
+	m_speedupTexture = nullptr; // Clear the ComPtr safely
+	m_speedupSRV = nullptr;
   }
   m_staticCache.Flush();
   m_dynamicCache.Flush();
 
-  std::unique_ptr<CDXTexture> pNewTexture = std::make_unique<CDXTexture>(m_textureWidth, newHeight, XB_FMT_A8);
+  // 1. Allocate Kodi's standard text texture wrapper array using the correct format
+  std::unique_ptr<CDXTexture> pNewTexture =
+	std::make_unique<CDXTexture>(m_textureWidth, newHeight, XB_FMT_A8);
 
-  //std::unique_ptr<CD3DTexture> newSpeedupTexture = std::make_unique<CD3DTexture>();
-  //if (!newSpeedupTexture->Create(m_textureWidth, newHeight, 1, D3D11_USAGE_DEFAULT,
-  //                               DXGI_FORMAT_R8_UNORM))
-  //{
-  //  return nullptr;
-  //}
-  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> newSpeedupSRV;
-  D3D11_TEXTURE2D_DESC desc = {};
-  desc.Width = m_textureWidth;
-  desc.Height = newHeight;
-  desc.MipLevels = 1;
-  desc.ArraySize = 1;
+  // 2. Instantiate Kodi's internal hardware texture wrapper object
+  std::unique_ptr<CD3DTexture> newSpeedupTexture = std::make_unique<CD3DTexture>();
 
-  // FIX 1: Change R8_UNORM to A8_UNORM to restore the Alpha channel channel kodi's text shaders expect!
-  desc.Format = DXGI_FORMAT_A8_UNORM;
-  desc.SampleDesc.Count = 1;
-  desc.SampleDesc.Quality = 0;
-
-  // FIX 2: Set usage to DEFAULT to perfectly match the non-blocking deferred UpdateSubresource pipeline
-  desc.Usage = D3D11_USAGE_DEFAULT;
-  desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-  desc.CPUAccessFlags = 0;
-  desc.MiscFlags = 0;
-
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> newSpeedupTexture;
-  HRESULT hr = DX::DeviceResources::Get()->GetD3DDevice()->CreateTexture2D(&desc, nullptr, &newSpeedupTexture);
-  if(FAILED(hr)) return nullptr;
-
-  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-  // FIX 3: Match the SRV format to the core Alpha texture canvas
-  srvDesc.Format = DXGI_FORMAT_A8_UNORM;
-  srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-  srvDesc.Texture2D.MipLevels = 1;
-
-  HRESULT srvHr = DX::DeviceResources::Get()->GetD3DDevice()->CreateShaderResourceView(
-	newSpeedupTexture.Get(), &srvDesc, &newSpeedupSRV);
-  if(FAILED(srvHr)) return nullptr;
-
-  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
-  ComPtr<ID3D11Multithread> pMultithread;
-  bool isLocked = false;
-
-  if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+  // Let Kodi natively build the text texture using its built-in descriptor pipeline paths!
+  if(!newSpeedupTexture->Create(m_textureWidth, newHeight, 1, D3D11_USAGE_DEFAULT,
+	DXGI_FORMAT_A8_UNORM)) // Ensure Alpha format is used
   {
-	// Force the Application Thread to freeze right here if the Present Thread
-	// is in the middle of drawing UI text with the current m_speedupTexture.
-	pMultithread->Enter();
-	isLocked = true;
+	return nullptr;
   }
 
-  // There might be data to copy from the previous texture
-  if (newSpeedupTexture && m_speedupTexture)
+  // 3. Extract the raw native D3D11 handles from Kodi's wrapper into your thread ComPtrs
+  // This satisfies your thread-safety lifeline queue requirements!
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> nativeTex = newSpeedupTexture->Get();
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nativeSRV;
+
+  // Fetch the internal Shader Resource View pointer address from the new speedup texture wrapper
+  if(newSpeedupTexture->GetAddressOfSRV())
   {
-    CD3D11_BOX rect(0, 0, 0, m_textureWidth, m_textureHeight, 1);
-    ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
-    pContext->CopySubresourceRegion(newSpeedupTexture.Get(), 0, 0, 0, 0, m_speedupTexture.Get(),
-                                    0, &rect);
+	nativeSRV = *(newSpeedupTexture->GetAddressOfSRV());
   }
 
-  m_texture.reset();
-
-  m_textureHeight = newHeight;
-  m_textureScaleY = 1.0f / m_textureHeight;
+  // 4. Thread-Safely back up the OLD texture handles to your FIFO queue lifelines before moving pointers
   if(m_speedupTexture)
   {
-	// Upcast the pointer safely to IUnknown and store it in the current frame container
-	Microsoft::WRL::ComPtr<IUnknown> oldAssetLifeline;
-	if(SUCCEEDED(m_speedupTexture.As(&oldAssetLifeline)))
+	Microsoft::WRL::ComPtr<IUnknown> textureLifeline;
+	Microsoft::WRL::ComPtr<IUnknown> srvLifeline;
+	if(SUCCEEDED(m_speedupTexture.As(&textureLifeline)))
+	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(textureLifeline);
+	if(m_speedupSRV && SUCCEEDED(m_speedupSRV.As(&srvLifeline)))
+	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(srvLifeline);
+  }
+
+  // 5. Context Synchronization: Pass data from the previous allocation if it exists
+  if(newSpeedupTexture && m_speedupTexture)
+  {
+	CD3D11_BOX rect(0, 0, 0, m_textureWidth, m_textureHeight, 1);
+	ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+	ComPtr<ID3D11Multithread> pMultithread;
+
+	if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
 	{
-	  DX::DeviceResources::Get()->KeepResourceAliveThisFrame(oldAssetLifeline);
+	  pMultithread->Enter();
+	  pContext->CopySubresourceRegion(newSpeedupTexture->Get(), 0, 0, 0, 0, m_speedupTexture.Get(), 0, &rect);
+	  pMultithread->Leave();
 	}
   }
 
-  // Now you can safely replace the handle without destroying the VRAM allocation!
-  m_speedupTexture = newSpeedupTexture;
-  m_speedupSRV = newSpeedupSRV;
+  // 6. Complete the pointer swaps and maintain state consistency
+  m_texture.reset(); // Clear old tracking state
 
-  // 2. Safely release the lock after pointers are fully updated and swapped
-  if(isLocked && pMultithread)
-  {
-	pMultithread->Leave();
-  }
+  m_textureHeight = newHeight;
+  m_textureScaleY = 1.0f / m_textureHeight;
 
+  // Assign the underlying handles to your thread tracking smart pointers
+  m_speedupTexture = nativeTex;
+  m_speedupSRV = nativeSRV;
+
+  // Crucial: Move the newly created wrapper object into your persistent class instance
+  m_speedupTextureClassWrapper = std::move(newSpeedupTexture);
+
+  // Return the initialized texture container directly to Kodi's font rendering engine
   return pNewTexture;
 }
-
 bool CGUIFontTTFDX::CopyCharToTexture(
   FT_BitmapGlyph bitGlyph, unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2)
 {
   FT_Bitmap bitmap = bitGlyph->bitmap;
-
   ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetD3DContext();
+
   if(m_speedupTexture && pContext && bitmap.buffer)
   {
 	CD3D11_BOX dstBox(x1, y1, 0, x2, y2, 1);
-	pContext->UpdateSubresource(m_speedupTexture.Get(), 0, &dstBox, bitmap.buffer, bitmap.pitch,
-	  0);
+
+	// Ensure the row pitch is absolute and valid
+	unsigned int rowPitch = std::abs(bitmap.pitch);
+	if(rowPitch == 0)
+	  rowPitch = x2 - x1; // Fallback to raw glyph width if pitch is unassigned
+
+	pContext->UpdateSubresource(m_speedupTexture.Get(), 0, &dstBox, bitmap.buffer, rowPitch, 0);
 	return true;
   }
 
   return false;
 }
-
 void CGUIFontTTFDX::DeleteHardwareTexture()
 {
 }
