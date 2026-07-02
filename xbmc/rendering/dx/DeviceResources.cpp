@@ -1265,9 +1265,26 @@ void DX::DeviceResources::Present()
 	static UINT64 lastEnd = 0;
 	if(SUCCEEDED(hr))
 	{
+	  FramePackage package;
+	  package.CommandList = pCommandList;
+
+	  // Track the primary GUI context views to prevent out-of-order destruction
+	  Microsoft::WRL::ComPtr<ID3D11RenderTargetView> currentRTV;
+	  m_deferrContext->OMGetRenderTargets(1, &currentRTV, nullptr);
+	  if(currentRTV)
+	  {
+		package.ResourceLifelines.push_back(currentRTV);
+	  }
+	  {
+		std::lock_guard<std::mutex> lock(m_lifelineMutex);
+		package.ResourceLifelines = std::move(m_currentFrameLifelines);
+		m_currentFrameLifelines.clear(); // Clear for Frame N+1 recording pass
+	  }
+
+	  // Push the complete package to your FIFO queue
 	  {
 		std::lock_guard<std::mutex> lock(m_queueMutex);
-		m_frameQueue.push(pCommandList); // Push cleanly to the back of the queue
+		m_frameQueue.push(package);
 	  }
 	  SignalFrameReady(); // Wake up the presentation thread loop
 	}
@@ -2012,12 +2029,15 @@ void DX::DeviceResources::PresentThreadLoop()
 
 	// 1. Extract the next command list cleanly from the FIFO queue
 	Microsoft::WRL::ComPtr<ID3D11CommandList> pCommandListToExecute;
+	FramePackage currentPackage; // Temporary container to hold resources alive during this loop pass
 	{
 	  std::lock_guard<std::mutex> qLock(m_queueMutex);
 	  if(!m_frameQueue.empty())
 	  {
-		pCommandListToExecute = m_frameQueue.front();
-		m_frameQueue.pop(); // Clear it from tracking
+		// Fix: Grab the full package containing the list and the texture lifelines
+		currentPackage = m_frameQueue.front();
+		pCommandListToExecute = currentPackage.CommandList;
+		m_frameQueue.pop();
 	  }
 	}
 
@@ -2057,6 +2077,11 @@ void DX::DeviceResources::PresentThreadLoop()
 
 	pMultithread->Enter();
 	m_d3dContext->ExecuteCommandList(pCommandListToExecute.Get(), FALSE);
+	if(pCommandListToExecute)
+	{
+	  m_d3dContext->ExecuteCommandList(pCommandListToExecute.Get(), TRUE);
+	  pCommandListToExecute.Reset();
+	}
 	if(m_swapChain)
 	{
 	  // Hardware test valve to catch occlusion properties without trapping context locks

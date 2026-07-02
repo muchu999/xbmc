@@ -352,7 +352,7 @@ bool CD3DTexture::LockRect(UINT subresource, D3D11_MAPPED_SUBRESOURCE *res, D3D1
     if ((mapType == D3D11_MAP_READ || mapType == D3D11_MAP_READ_WRITE) && m_usage == D3D11_USAGE_DYNAMIC)
       return false;
 
-    return (S_OK == DX::DeviceResources::Get()->GetImmediateContext()->Map(m_texture.Get(), subresource, mapType, 0, res));
+    return (S_OK == DX::DeviceResources::Get()->GetD3DContext()->Map(m_texture.Get(), subresource, mapType, 0, res));
   }
   return false;
 }
@@ -361,7 +361,7 @@ bool CD3DTexture::UnlockRect(UINT subresource) const
 {
   if (m_texture)
   {
-    DX::DeviceResources::Get()->GetImmediateContext()->Unmap(m_texture.Get(), subresource);
+    DX::DeviceResources::Get()->GetD3DContext()->Unmap(m_texture.Get(), subresource);
     return true;
   }
   return false;

@@ -272,8 +272,18 @@ private:
 	std::atomic<int64_t> m_lastVsyncTimestamp {0};
 	HANDLE m_latencyWaitableObject = nullptr;
 	std::atomic<HRESULT> m_presentResult {S_OK};
+	std::mutex                                m_lifelineMutex;
+	std::vector<Microsoft::WRL::ComPtr<IUnknown>> m_currentFrameLifelines;
+	//std::queue<Microsoft::WRL::ComPtr<ID3D11CommandList>> m_frameQueue;
+	struct FramePackage
+	{
+	  Microsoft::WRL::ComPtr<ID3D11CommandList> CommandList;
+	  std::vector<Microsoft::WRL::ComPtr<IUnknown>> ResourceLifelines; // Keeps assets alive!
+	};
+
+	// Change your queue to use this wrapper
+	std::queue<FramePackage> m_frameQueue;
 	std::mutex m_queueMutex;
-	std::queue<Microsoft::WRL::ComPtr<ID3D11CommandList>> m_frameQueue;
 
 
 	void PresentThreadLoop();

@@ -1168,7 +1168,16 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
   //----------------
   if((m_videoSettings.m_placeboOptions->getPlOptions()->params.frame_mixer == NULL) && m_videoSettings.m_PlaceboFrameMixerBypassQueue)
   {
+	Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
+	if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread))))
+	{
+	  pMultithread->Enter(); // Block if Present Thread is currently processing the GUI list
+	}
 	bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, params);
+	if(pMultithread)
+	{
+	  pMultithread->Leave(); // Safely unlock context for the Present thread
+	}
 	int64_t end = CurrentHostCounter();
 	buffer->m_RenderDuration = (end - start) / (float) frequency.QuadPart;
 	buffer->m_bHasPeakDetectMetadata = pl_renderer_get_hdr_metadata(PL::PLInstance::Get()->GetRenderer(), &buffer->m_PeakDetectMetadata);
@@ -1180,6 +1189,12 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
   }
   else
   {
+	Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
+	if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread))))
+	{
+	  pMultithread->Enter(); // Block if Present Thread is currently processing the GUI list
+	}
+
 	static double oldRenderPts = 0.0;
 	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "ScreenFps: {:.3f}, sourceFps:{:.3f}, renderTime: {:6.3f}, idx: {} bufferPts: {:.3f}, renderPts: {:.3f}, renderPtsDiff: {:.3f}",
 	  m_ScreenFps, m_fps, buffer->m_RenderDuration * 1000.0, m_iBufferIndex, buffer->pts / 1000.0, renderPts / 1000, (renderPts - oldRenderPts) / 1000.0);
@@ -1249,6 +1264,10 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
 	  // Render
 	  m_FrameMixerNumFrames = mix.num_frames;
 	  bool res2 = pl_render_image_mix(PL::PLInstance::Get()->GetRenderer(), &mix, &frameOut, params);
+	  if(pMultithread)
+	  {
+		pMultithread->Leave(); // Safely unlock context for the Present thread
+	  }
 
 	  if(!res2)
 	  {
