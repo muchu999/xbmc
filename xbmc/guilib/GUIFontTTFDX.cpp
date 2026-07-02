@@ -249,6 +249,20 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
     return nullptr;
   }
 
+  
+  ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+  ComPtr<ID3D11Multithread> pMultithread;
+  bool isLocked = false;
+  
+  if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+  {
+	// Force the Application Thread to freeze right here if the Present Thread
+	// is in the middle of drawing UI text with the current m_speedupTexture.
+	pMultithread->Enter();
+	isLocked = true;
+  }
+  
+  
   // There might be data to copy from the previous texture
   if (newSpeedupTexture && m_speedupTexture)
   {
@@ -264,6 +278,12 @@ std::unique_ptr<CTexture> CGUIFontTTFDX::ReallocTexture(unsigned int& newHeight)
   m_textureScaleY = 1.0f / m_textureHeight;
   m_speedupTexture = std::move(newSpeedupTexture);
 
+  // 2. Safely release the lock after pointers are fully updated and swapped
+  if(isLocked && pMultithread)
+  {
+	pMultithread->Leave();
+  }
+  
   return pNewTexture;
 }
 
@@ -273,14 +293,35 @@ bool CGUIFontTTFDX::CopyCharToTexture(
   FT_Bitmap bitmap = bitGlyph->bitmap;
 
   ComPtr<ID3D11DeviceContext> pContext = DX::DeviceResources::Get()->GetImmediateContext();
+  ComPtr<ID3D11Multithread> pMultithread;
+  bool isLocked = false;
+
+  if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+  {
+	// Force the Application Thread to freeze right here if the Present Thread
+	// is in the middle of drawing UI text with the current m_speedupTexture.
+	pMultithread->Enter();
+	isLocked = true;
+  }
   if (m_speedupTexture && m_speedupTexture->Get() && pContext && bitmap.buffer)
   {
     CD3D11_BOX dstBox(x1, y1, 0, x2, y2, 1);
     pContext->UpdateSubresource(m_speedupTexture->Get(), 0, &dstBox, bitmap.buffer, bitmap.pitch,
                                 0);
-    return true;
+	// 2. Safely release the lock after pointers are fully updated and swapped
+	if(isLocked && pMultithread)
+	{
+	  pMultithread->Leave();
+	}
+	
+	return true;
   }
-
+  // 2. Safely release the lock after pointers are fully updated and swapped
+  if(isLocked && pMultithread)
+  {
+	pMultithread->Leave();
+  }
+  
   return false;
 }
 

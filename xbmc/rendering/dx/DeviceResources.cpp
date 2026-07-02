@@ -2076,7 +2076,6 @@ void DX::DeviceResources::PresentThreadLoop()
 	if(!m_presentRunning.load(std::memory_order_acquire)) break;
 
 	pMultithread->Enter();
-	m_d3dContext->ExecuteCommandList(pCommandListToExecute.Get(), FALSE);
 	if(pCommandListToExecute)
 	{
 	  m_d3dContext->ExecuteCommandList(pCommandListToExecute.Get(), TRUE);
@@ -2139,7 +2138,6 @@ HRESULT DX::DeviceResources::SignalFrameReady()
 	return lastPresentHr;
   }
 
-  {
 	//std::lock_guard<std::mutex> lock(m_presentMutex);  //cl one or the other???
 	
 	// 1. Thread Safety Shield: Lock out context conflicts BEFORE flushing
@@ -2161,24 +2159,25 @@ HRESULT DX::DeviceResources::SignalFrameReady()
 	  pMultithread->Leave();
 	}
 
-  }
+	// 2. Queue Increment Passage
+	// Increment rendered frames AFTER the flush to ensure instructions are in the driver
+	m_framesRendered.fetch_add(1, std::memory_order_release);
+	m_presentCv.notify_one(); // Wake up presentation loop if it is sleeping
 
-
-  m_framesRendered.fetch_add(1, std::memory_order_release);
-
-  // If the rendering loop gets more than 1 frame ahead of display, sleep.
-  if((m_framesRendered.load(std::memory_order_acquire) - m_framesPresented.load(std::memory_order_acquire)) > 1)
-  {
+	// 3. The Backpressure Throttling Valve
+	// This is the missing piece that prevents resource destruction crashes
 	std::unique_lock<std::mutex> lock(m_presentMutex);
-	m_renderCv.wait_for(lock, std::chrono::milliseconds(100), [this] {
-	  return ((m_framesRendered.load(std::memory_order_acquire) - m_framesPresented.load(std::memory_order_acquire)) <= 1)
-		|| !m_presentRunning.load(std::memory_order_acquire);
+
+	// Set your maximum pipeline smoothing depth here.
+	// For BufferCount = 3, use 1 or 2. For BufferCount = 6, use 4 or 5.
+	const size_t maxAllowedQueueDepth = 1;  // 0 = no throttling, 1 = one frame in queue, 2 = two frames in queue, etc.
+
+	m_renderCv.wait(lock, [this, maxAllowedQueueDepth] {
+	  size_t pendingInQueue = m_framesRendered.load(std::memory_order_acquire) - m_framesPresented.load(std::memory_order_acquire);
+	  return (pendingInQueue <= maxAllowedQueueDepth) || !m_presentRunning.load(std::memory_order_acquire);
 	  });
-  }
 
-  m_presentCv.notify_one();
-
-  return S_OK;
+	return S_OK;
 }
 
 void DX::DeviceResources::DrainPresentationQueue()
