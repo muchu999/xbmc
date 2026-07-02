@@ -317,31 +317,19 @@ bool CGUIFontTTFDX::CopyCharToTexture(
   ComPtr<ID3D11Multithread> pMultithread;
   bool isLocked = false;
 
-  if(pContext && SUCCEEDED(pContext.As(&pMultithread)))
+  if(m_speedupTexture && pContext && bitmap.buffer)
   {
-	// Force the Application Thread to freeze right here if the Present Thread
-	// is in the middle of drawing UI text with the current m_speedupTexture.
-	pMultithread->Enter();
-	isLocked = true;
-  }
-  if (m_speedupTexture && m_speedupTexture.Get() && pContext && bitmap.buffer)
-  {
-    CD3D11_BOX dstBox(x1, y1, 0, x2, y2, 1);
-    pContext->UpdateSubresource(m_speedupTexture.Get(), 0, &dstBox, bitmap.buffer, bitmap.pitch,
-                                0);
-	// 2. Safely release the lock after pointers are fully updated and swapped
-	if(isLocked && pMultithread)
-	{
-	  pMultithread->Leave();
-	}
-	
+	CD3D11_BOX dstBox(x1, y1, 0, x2, y2, 1);
+
+	// Ensure the row pitch is absolute and valid
+	unsigned int rowPitch = std::abs(bitmap.pitch);
+	if(rowPitch == 0)
+	  rowPitch = x2 - x1; // Fallback to raw glyph width if pitch is unassigned
+
+	pContext->UpdateSubresource(m_speedupTexture.Get(), 0, &dstBox, bitmap.buffer, rowPitch, 0);
 	return true;
   }
-  // 2. Safely release the lock after pointers are fully updated and swapped
-  if(isLocked && pMultithread)
-  {
-	pMultithread->Leave();
-  }
+  
   
   return false;
 }
