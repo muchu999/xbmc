@@ -604,8 +604,10 @@ void DX::DeviceResources::CreateDeviceResources()
 
   // Store pointers to the Direct3D 11.1 API device and immediate context.
   hr = device.As(&m_d3dDevice); CHECK_ERR();
+  #if 0
   ReleaseProfilingQueries();
   InitProfiling();
+#endif
 
   // Check shared textures support
   CheckNV12SharedTexturesSupport();
@@ -1902,8 +1904,9 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo() const
   double mean;
   double var = m_queueDepthTracker.calculateVariance(mean);
   info.judder = StringUtils::Format("Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", m_queueDepthTracker.calculateMin(), m_queueDepthTracker.calculatePeak(), mean, cadenceDropCount);
-  var = m_guiComposeTimeMonitor.calculateVariance(mean);
-  info.guiComposeTime = StringUtils::Format("GUI Compose time mean: {:4.2f}ms, max: {:4.2f}ms, stdVar: {:4.2f}", mean*1000.0, m_guiComposeTimeMonitor.calculatePeak()*1000.0, std::sqrt(var) * 1000.0);
+  //var = m_guiComposeTimeMonitor.calculateVariance(mean);
+  //info.guiComposeTime = StringUtils::Format("GUI Compose time mean: {:4.2f}ms, max: {:4.2f}ms, stdVar: {:4.2f}", mean*1000.0, m_guiComposeTimeMonitor.calculatePeak()*1000.0, std::sqrt(var) * 1000.0);
+  info.guiComposeTime = "-";
 
   return info;
 }
@@ -2085,7 +2088,7 @@ void DX::DeviceResources::PresentThreadLoop()
 	pMultithread->Enter();
 	if(pCommandListToExecute)
 	{
-#if 1
+#if 0
 	  PresentQuery& current_frame = m_presentQueryRing [m_presentWriteSlot];
 
 	  if(current_frame.disjoint)
@@ -2098,7 +2101,7 @@ void DX::DeviceResources::PresentThreadLoop()
 	  m_d3dContext->ExecuteCommandList(pCommandListToExecute.Get(), TRUE);
 	  pCommandListToExecute.Reset(); 
 
-#if 1
+#if 0
 	  if(current_frame.disjoint)
 	  {
 		m_d3dContext->End(current_frame.end);  
@@ -2113,6 +2116,7 @@ void DX::DeviceResources::PresentThreadLoop()
 	int read_slot = (m_presentWriteSlot + 1) % PRESENT_QUERY_LATENCY;
 	PresentQuery& old_pass = m_presentQueryRing [read_slot];
 
+#if 0
 	if(old_pass.is_active && old_pass.disjoint)
 	{
 	  D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjoint_data;
@@ -2140,6 +2144,7 @@ void DX::DeviceResources::PresentThreadLoop()
 		old_pass.is_active = false; // Free for reuse
 	  }
 	}
+#endif
 	if(m_swapChain)
 	{
 	  // Hardware test valve to catch occlusion properties without trapping context locks
@@ -2277,7 +2282,7 @@ void DX::DeviceResources::KeepResourceAliveThisFrame(const Microsoft::WRL::ComPt
   m_currentFrameLifelines.push_back(resource); 
 }
 
-#if 1
+#if 0
 void DX::DeviceResources::InitProfiling() {
   D3D11_QUERY_DESC desc_disjoint = {D3D11_QUERY_TIMESTAMP_DISJOINT, 0};
   D3D11_QUERY_DESC desc_timestamp = {D3D11_QUERY_TIMESTAMP, 0};
