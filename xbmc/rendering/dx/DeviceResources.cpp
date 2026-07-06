@@ -2113,8 +2113,8 @@ void DX::DeviceResources::PresentThreadLoop()
 #endif
 	}
 	// 5. NATIVELY READ COMPOSITING HISTORICAL TIMINGS:
-	int read_slot = (m_presentWriteSlot + 1) % PRESENT_QUERY_LATENCY;
-	PresentQuery& old_pass = m_presentQueryRing [read_slot];
+	//int read_slot = (m_presentWriteSlot + 1) % PRESENT_QUERY_LATENCY;
+	//PresentQuery& old_pass = m_presentQueryRing [read_slot];
 
 #if 0
 	if(old_pass.is_active && old_pass.disjoint)
@@ -2187,11 +2187,13 @@ void DX::DeviceResources::PresentThreadLoop()
 
 HRESULT DX::DeviceResources::SignalFrameReady()
 {
+#if 0
   float newSample = m_guiComposeTime.exchange(-1.0f, std::memory_order_relaxed);
-  if(newSample >= 0.0f)
+  f(newSample >= 0.0f)
   {
 	m_guiComposeTimeMonitor.update(newSample);
   }
+#endif
   if(!m_presentRunning.load(std::memory_order_acquire) && m_swapChain)
   {
 	StartPresentThread();

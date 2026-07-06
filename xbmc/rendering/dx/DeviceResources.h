@@ -305,7 +305,7 @@ private:
 
 public:
   // Latency matching DXGI default max frame latency
-
+#if 0
   struct PresentQuery
   {
 	ID3D11Query* disjoint = nullptr;
@@ -317,6 +317,7 @@ public:
   int m_currentWriteSlot = 0;
   int m_presentWriteSlot = 0;
   std::atomic<float> m_guiComposeTime {0.0f};
+#endif
 
   void KeepResourceAliveThisFrame(const Microsoft::WRL::ComPtr<IUnknown>& resource);
   HRESULT SignalFrameReady();
