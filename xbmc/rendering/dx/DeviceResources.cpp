@@ -395,7 +395,7 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
   if(DX::SdkLayersAvailable())
   {
 	// If the project is in a debug build, enable debugging via SDK Layers with this flag.
-	creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
+	// creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled, leads to frequent crashes with multitrhreaded rendering/presentation, D3D11 somehow keeps traces of previous crashes and that will lead to more crashes even for loads that were working fine before.
   }
 #endif
 
