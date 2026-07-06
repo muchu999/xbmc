@@ -1136,25 +1136,27 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
   {
 	D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjoint_data;
 
-	HRESULT hr = SafeGetQueryData(pDeviceContext, old_frame.disjoint, &disjoint_data, sizeof(disjoint_data));
+	// Pass D3D11_ASYNC_GETDATA_DONOTFLUSH flag to guarantee 0% blocking/stalling
+	{
+	  HRESULT hr = pDeviceContext->GetData(old_frame.disjoint, &disjoint_data, sizeof(disjoint_data), D3D11_ASYNC_GETDATA_DONOTFLUSH);
 
-	if(hr == S_OK)
-	{ // GPU has finished writing data to this historical frame slot
-	  UINT64 start_time = 0;
-	  UINT64 end_time = 0;
+	  if(hr == S_OK) { // GPU has finished writing data to this historical frame slot
+		UINT64 start_time = 0;
+		UINT64 end_time = 0;
+		pDeviceContext->GetData(old_frame.start, &start_time, sizeof(UINT64), 0);
+		pDeviceContext->GetData(old_frame.end, &end_time, sizeof(UINT64), 0);
 
-	  HRESULT hrStart = SafeGetQueryData(pDeviceContext, old_frame.start, &start_time, sizeof(UINT64));
-	  HRESULT hrEnd = SafeGetQueryData(pDeviceContext, old_frame.end, &end_time, sizeof(UINT64));
-
-	  if(hrStart == S_OK && hrEnd == S_OK && !disjoint_data.Disjoint && start_time > 0 && end_time > start_time)
-	  {
-		double freq = static_cast<double>(disjoint_data.Frequency);
-		buffer->m_RenderDurationGpu = (static_cast<float>(end_time - start_time) / freq);
-		renderTimeMonitorGpu.update(buffer->m_RenderDurationGpu);
+		if(!disjoint_data.Disjoint && start_time > 0 && end_time > start_time)
+		{
+		  double freq = static_cast<double>(disjoint_data.Frequency);
+		  buffer->m_RenderDurationGpu = (static_cast<float>(end_time - start_time) / freq);
+		  renderTimeMonitorGpu.update(buffer->m_RenderDurationGpu);
+		}
+		old_frame.is_active = false; // Reset slot for reuse
 	  }
-	  old_frame.is_active = false; // Reset slot for reuse
 	}
   }
+
 
   // Render 
   if((m_videoSettings.m_placeboOptions->getPlOptions()->params.frame_mixer == NULL) && m_videoSettings.m_PlaceboFrameMixerBypassQueue)
