@@ -117,7 +117,8 @@ namespace DX
     D3D11_VIEWPORT GetScreenViewport() const { return m_screenViewport; }
     void SetViewPort(D3D11_VIEWPORT& viewPort) const;
 
-    void ReleaseBackBuffer();
+	void ReleaseDeferredContext(bool bDeep);
+	void ReleaseBackBuffer(bool bDeep = false);
     void CreateBackBuffer();
     void ResizeBuffers();
 

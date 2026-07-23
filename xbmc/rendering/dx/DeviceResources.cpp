@@ -663,22 +663,57 @@ void DX::DeviceResources::CreateDeviceResources()
   m_bDeviceCreated = true;
 }
 
-void DX::DeviceResources::ReleaseBackBuffer()
+void DX::DeviceResources::ReleaseDeferredContext(bool bDeep)
+{
+  Microsoft::WRL::ComPtr<ID3D11CommandList> pendingList;
+  if(m_deferrContext)
+  {
+	// Clear the previous context, it doesn't clean everything but waiting 
+	// a bit before re-creating the swapchain (sleep 0.5) will work in simple cases (no deep menues open)
+	//cl Need to figure out what is hanging to the swapchain during that time...
+	ID3D11RenderTargetView* nullViews [] = {nullptr, nullptr, nullptr, nullptr};
+	m_deferrContext->OMSetRenderTargets(4, nullViews, nullptr);
+	m_deferrContext->FinishCommandList(bDeep ? false : true, &pendingList);
+  }
+
+  if(bDeep)
+  {
+	// Destroy all links to swapchain or swapchain will not be really released and next re-creation will fail
+	{
+	  std::lock_guard<std::mutex> lock(m_lifelineMutex);
+	  m_currentFrameLifelines.clear();
+	}
+	{
+	  std::lock_guard<std::mutex> lock(m_queueMutex);
+	  while(!m_frameQueue.empty())
+	  {
+		m_frameQueue.pop(); // Popping the packages forces the immediate destruction of the tracked CommandLists and ResourceLifelines vectors
+	  }
+	}
+	if(m_deferrContext)
+	{
+	  // Completely strip all pipeline stages (VS, PS, OM, CS) on the deferred context
+	  m_deferrContext->ClearState();
+
+	  // Explicitly drop the list to force immediate COM reference destruction
+	  pendingList.Reset();
+	}
+  }
+  // Force the immediate context to flush the final garbage collection queue
+  if(m_d3dContext)
+  {
+	m_d3dContext->Flush();
+  }
+
+}
+
+void DX::DeviceResources::ReleaseBackBuffer(bool bDeep)
 {
   CLog::LogF(LOGDEBUG, "release buffers.");
 
   m_backBufferTex.Release();
   m_d3dDepthStencilView = nullptr;
-  if (m_deferrContext)
-  {
-    // Clear the previous window size specific context.
-    ID3D11RenderTargetView* nullViews[] = { nullptr, nullptr, nullptr, nullptr };
-    m_deferrContext->OMSetRenderTargets(4, nullViews, nullptr);
-    FinishCommandList(false);
-
-    m_deferrContext->Flush();
-    m_d3dContext->Flush();
-  }
+  ReleaseDeferredContext(bDeep);
 }
 
 void DX::DeviceResources::CreateBackBuffer()
@@ -814,7 +849,6 @@ void DX::DeviceResources::DestroySwapChain()
 	m_d3dContext->Flush();
   }
 
-  // 5. DESTROY SWAP CHAIN
   m_swapChain = nullptr;
   m_IsTransferPQ = false;
   CLog::LogF(LOGDEBUG, "exit");
@@ -1041,6 +1075,8 @@ void DX::DeviceResources::ResizeBuffers()
 
     if (m_IsHDROutput)
       SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
+	m_bIsTearingDown = false;
+
   }
 
   CLog::LogF(LOGDEBUG, "end resize buffers.");
@@ -1051,6 +1087,8 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
 {
   CLog::LogF(LOGDEBUG, "enter");
   StopPresentThread();
+  StopWatchdog();
+  DrainPresentationQueue();
 
   ReleaseBackBuffer();
 
@@ -1266,13 +1304,16 @@ void DX::DeviceResources::OnDeviceRestored()
 void DX::DeviceResources::HandleDeviceLost(bool removed)
 {
   bool backbuferExists = m_backBufferTex.Get() != nullptr;
+  StopPresentThread();
+  StopWatchdog();
+  DrainPresentationQueue();
 
   OnDeviceLost(removed);
   if (m_deviceNotify != nullptr)
     m_deviceNotify->OnDXDeviceLost();
 
   if (backbuferExists)
-    ReleaseBackBuffer();
+    ReleaseBackBuffer(true);
 
   DestroySwapChain();
 
@@ -1959,8 +2000,7 @@ void DX::DeviceResources::ApplyDisplaySettings()
 {
   CLog::LogF(LOGDEBUG, "Re-create swapchain due Display Settings changed");
 
-  DestroySwapChain();
-  CreateWindowSizeDependentResources();
+  HandleDeviceLost(true); // Recreting swapchain with menus open causes a crash when using multithreaded presentation
 }
 
 bool DX::DeviceResources::get_output_desc1_from_ctx(struct mp_dxgi_factory_ctx* ctx, DXGI_OUTPUT_DESC1* pDesc)
