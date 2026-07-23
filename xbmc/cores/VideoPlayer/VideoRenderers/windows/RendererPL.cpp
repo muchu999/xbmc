@@ -302,9 +302,12 @@ bool CRTXVideoProcessor::ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcesso
   // DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 matches DXGI_FORMAT_R10G10B10A2_UNORM
   // DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709 matches DXGI_FORMAT_R16G16B16A16_FLOAT
   if(bUseNvRtxHdr)
-	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
+	if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+	else
+	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
   else
-	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 
   return true;
 }
@@ -498,17 +501,11 @@ void CRendererPL::CheckVideoParameters()
   }
 
   // If super resolution setting changed, flag it to make change at the beginning of frame rendering.
-  static bool bPreviousNvr = false;
-  static bool bInit = false;
-  if(!bInit)
-  {
-	bInit = true;
-  }
-  else if(m_bUseNvSuperResolution != bPreviousNvr)
+  if(!m_bPreviousUseNvSuperResolution.has_value() || (m_bPreviousUseNvSuperResolution != m_bUseNvSuperResolution))
   {
 	CRendererPL::OnRtxSettingChanged();
   }
-  bPreviousNvr = m_bUseNvSuperResolution;
+  m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
 
   bool bUseUnordered = !m_videoSettings.m_placeboOptions->getPlOptions()->params.skip_target_clearing ? true : false;
   if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
@@ -872,12 +869,16 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
 	if(!m_RtxVideoProcessor.IsStreamHdr() && !m_bUseNvRtxHdr)
 	{
 	  frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
-	  frameIn->color.transfer = PL_COLOR_TRC_LINEAR;
+	  frameIn->color.transfer = PL_COLOR_TRC_LINEAR;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
 	}
 	else
 	{
 	  frameIn->color.primaries = PL_COLOR_PRIM_BT_2020; //PL_COLOR_PRIM_BT_709;
-	  frameIn->color.transfer = PL_COLOR_TRC_LINEAR; //L_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
+
+	  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		frameIn->color.transfer = PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
+	  else
+		frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
 
 	  frameIn->color.hdr = {};
 	  frameIn->color.hdr.min_luma = 0.0005;
@@ -978,6 +979,34 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	return;
   }
 
+  RECT srcRect = {sourceRect.x1, sourceRect.y1, sourceRect.x2, sourceRect.y2}; //cl 
+  RECT destRect = {};
+  if(m_bUseNvSuperResolution)
+	destRect = {0, 0, static_cast<LONG>(target.GetWidth()), static_cast<LONG>(target.GetHeight())};
+  else
+	destRect = srcRect;
+
+  //cl Don't re-render repeat frames
+  D3D11_VIDEO_FRAME_FORMAT fieldFFormat = buf->pictureFlags & DVP_FLAG_INTERLACED ? buf->pictureFlags & DVP_FLAG_TOP_FIELD_FIRST ? D3D11_VIDEO_FRAME_FORMAT_INTERLACED_TOP_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_INTERLACED_BOTTOM_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+  bool bIsInterlaced = !(fieldFFormat == D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+  int fieldIndex = !bIsInterlaced ? 0 : (flags & RENDER_FLAG_FIELD0) ? 0 : 1;
+  if ( (buf->frameIdx == m_lastFrameIdx) && (fieldIndex == m_lastFieldIndex) && (m_bUseNvSuperResolution == m_bLastNvSuperResolution) && (m_bUseNvRtxHdr == m_bLastNvRtxHdr))
+  {
+	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "Skipping blit for frameIdx: {}, fieldIndex: {}", buf->frameIdx, fieldIndex);
+	// Update source rect to the current output image for the next stage
+	sourceRect.x1 = destRect.left;
+	sourceRect.y1 = destRect.top;
+	sourceRect.x2 = destRect.right;
+	sourceRect.y2 = destRect.bottom;
+
+    return;
+  }
+   
+  m_lastFrameIdx = buf->frameIdx;
+  m_lastFieldIndex = fieldIndex;
+  m_bLastNvSuperResolution = m_bUseNvSuperResolution;
+  m_bLastNvRtxHdr = m_bUseNvRtxHdr;
+
   // Get the underlying D3D11 texture index from the DXVA video buffer
   unsigned arrayIdx;
   hr = buf->GetResource(&pResource, &arrayIdx); //cl get buffer from decoder...
@@ -994,100 +1023,75 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	CLog::LogF(LOGERROR, "Query for the ID3D11Texture2D interface failed");
   }
 
-  Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
-  if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread))))
-  {
-	pMultithread->Enter();
-  }
-
-  // Update processor sizes if required
-  D3D11_TEXTURE2D_DESC srcDesc, destDesc;
-  pTexture->GetDesc(&srcDesc);
-  m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight);
-
-  // Set the color space for the video processor 
-  D3D11_VIDEO_PROCESSOR_COLOR_SPACE inputColorSpace = {};
-  inputColorSpace.Usage = 0; // 0 = Playback optimization
-  inputColorSpace.RGB_Range = 1; // 0 = Full (0-255), 1 = Limited (16-235)
-  inputColorSpace.YCbCr_Matrix = 1; // 0 = BT.601 (Old SD), 1 = BT.709 (HD Video)
-  inputColorSpace.YCbCr_xvYCC = 0; // 0 = Standard conventional color gamut
-  inputColorSpace.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_16_235; // Matches Limited
-  m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, &inputColorSpace);
-
-  // Create the video processor input view for the DXVA decoder output
-  D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inputViewDesc = {};
-  inputViewDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D; // Explicitly map to a 2D Texture
-  inputViewDesc.Texture2D.ArraySlice = arrayIdx;           // Target the specific frame index
-  inputViewDesc.Texture2D.MipSlice = 0;
-  Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView>  pInputView; 
-  hr = m_RtxVideoProcessor.m_pVideoDevice->CreateVideoProcessorInputView(pTexture.Get(), m_RtxVideoProcessor.m_pVideoEnumerator.Get(), &inputViewDesc, pInputView.GetAddressOf());
-  if(FAILED(hr))
-  {
-	CLog::LogF(LOGERROR, "CreateVideoProcessorInputView failed");
-	return;
-  }
-
-  RECT srcRect = {sourceRect.x1, sourceRect.y1, sourceRect.x2, sourceRect.y2};
-  RECT destRect = {};
-
-  if(m_bUseNvSuperResolution)
-  {
-	// Stretch across full 4K canvas to engage Tensor Core Upscaling
-	destRect = {0, 0, static_cast<LONG>(m_TempTarget.GetWidth()), static_cast<LONG>(m_TempTarget.GetHeight())};
-  }
-  else
-  {
-	// Force 1:1 scale bounds. This shuts down RTX Super Resolution
-	destRect = srcRect;
-  }
-  RECT streamDestRect = destRect;
-
-  m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamSourceRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &srcRect);
-  m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
-  m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
-
-
-  m_RtxVideoProcessor.ConfigureHdrColorSpaces(m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
-
-
-
   if(m_RtxVideoProcessor.IsInitialized())
   {
-	//cl Don't re-render repeat frames
-	//if (pRawTextureAddress == m_pLastProcessedTextureAddress && isSecondField == m_wasSecondField && vsrEnabled == m_wasVsrEnabled && hdrEnabled == m_wasHdrEnabled)
-	//{
-	//  return true;
-	//}
-	// 
-	bool isFullRange = false; //(m_streamColorRange == PL_COLOR_LEVELS_PC || m_streamColorRange == PL_COLOR_LEVELS_FULL);
-	bool isBT601 = false; //(m_streamColorSpace == PL_COLOR_PRIM_BT_601_NTSC || m_streamColorSpace == PL_COLOR_PRIM_BT_601_PAL);
+	Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
+	if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread))))
+	{
+	  pMultithread->Enter();
+	}
 
-	D3D11_VIDEO_PROCESSOR_COLOR_SPACE colorSpace = {};
-	colorSpace.Usage = 0u;               // 0 = Playback (Video content optimization)
-	colorSpace.RGB_Range = isFullRange ? 0u : 1u; // 0 = Full (0-255), 1 = Limited (16-235)
-	colorSpace.YCbCr_Matrix = isBT601 ? 0u : 1u;     // 0 = BT.601, 1 = BT.709
-	colorSpace.YCbCr_xvYCC = 0u;               // 0 = Conventional YCbCr
-	colorSpace.Nominal_Range = isFullRange ? 2u : 1u; // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
+	// Update processor sizes if required
+	D3D11_TEXTURE2D_DESC srcDesc, destDesc;
+	pTexture->GetDesc(&srcDesc);
+	m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight);
 
-	// 2. Commit the color space configuration to primary video stream slot 0
-	// (Use 0u instead of DEFAULT_STREAM_INDEX if it's not globally defined in your scope)
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0u,&colorSpace);
+	// Create the video processor input view for the DXVA decoder output
+	D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inputViewDesc = {};
+	inputViewDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D; // Explicitly map to a 2D Texture
+	inputViewDesc.Texture2D.ArraySlice = arrayIdx;           // Target the specific frame index
+	inputViewDesc.Texture2D.MipSlice = 0;
+	Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView>  pInputView;
+	hr = m_RtxVideoProcessor.m_pVideoDevice->CreateVideoProcessorInputView(pTexture.Get(), m_RtxVideoProcessor.m_pVideoEnumerator.Get(), &inputViewDesc, pInputView.GetAddressOf());
+	if(FAILED(hr))
+	{
+	  CLog::LogF(LOGERROR, "CreateVideoProcessorInputView failed");
+	  return;
+	}
+
+	RECT streamDestRect = destRect;
+
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamSourceRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &srcRect);
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
+
+	m_RtxVideoProcessor.ConfigureHdrColorSpaces(m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
+
+
+	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
+	bool isFullRange = buffer->full_range;
+	bool isBT601 = buffer->color_space == AVCOL_SPC_BT470BG || buffer->color_space == AVCOL_SPC_SMPTE170M;
+	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
+	inColorSpace.RGB_Range = isFullRange ? 0u : 1u;     // 0 = Full (0-255), 1 = Limited (16-235)
+	inColorSpace.YCbCr_Matrix = isBT601 ? 0u : 1u;      // 0 = BT.601, 1 = BT.709
+	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
+	inColorSpace.Nominal_Range = isFullRange ? 2u : 1u; // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0u,&inColorSpace);
+
+	D3D11_VIDEO_PROCESSOR_COLOR_SPACE outColorSpace = {};
+	outColorSpace.Usage = 0u;
+	outColorSpace.RGB_Range = 0u;
+	outColorSpace.YCbCr_Matrix = 1u;
+	outColorSpace.YCbCr_xvYCC = 1u;
+	outColorSpace.Nominal_Range = 2u;
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), &outColorSpace);
+
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamRotation(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, false, static_cast<D3D11_VIDEO_PROCESSOR_ROTATION>(0 / 90));
 
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), &colorSpace);
-
-	bool blitSuccess = m_RtxVideoProcessor.ExecuteBlit(pInputView.Get(), m_pTempTargetView.Get(), buffer->pictureFlags, flags, buf->frameIdx);
+	m_RtxVideoProcessor.EnableNvidiaVideoSuperResolution(m_bUseNvSuperResolution);
+	m_RtxVideoProcessor.EnableNvidiaRtxVideoHdr(m_bUseNvRtxHdr);
+	
+	bool blitSuccess = m_RtxVideoProcessor.ExecuteBlit(pInputView.Get(), buf, m_pTempTargetView.Get(), buffer->pictureFlags, flags, buf->frameIdx);
 	//m_RtxVideoProcessor.DebugBypassToDisplay(target.Get(), m_TempTarget.Get(), destPoints); return;
 
 	if(!blitSuccess)
 	{
-	  //cl Fall back to standard SDR ???
+	  CLog::LogF(LOGERROR, "RTX Engine: ExecuteBlit failed");
 	}
-  }
-
-  if(pMultithread)
-  {
-	pMultithread->Leave();
+	if(pMultithread)
+	{
+	  pMultithread->Leave();
+	}
   }
 
   // Wrap the output texture for libplacebo
@@ -2207,7 +2211,6 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   color.YCbCr = {0.0625f, 0.5f, 0.5f, 1.0f}; // black color
   m_pVideoContext->VideoProcessorSetOutputBackgroundColor(m_pVideoProcessor.Get(), TRUE, &color);
 
-  EnableNvidiaVideoExtension();
 
   m_bInitialized = true;
   return true;
@@ -2226,10 +2229,15 @@ void CRTXVideoProcessor::FlushHistoryQueue()
 
   if(!m_historyQueue.empty())
   {
-	// 2. Drop all cached frame view references instantly
-	m_historyQueue.clear();
+	while(!m_historyQueue.empty()) 
+	{
+	  auto& entry = m_historyQueue.front();
 
-	CLog::LogF(LOGDEBUG, "RTX Video Processor: Flushed advanced deinterlacing history queue due to seek/skip.");
+	  CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(entry.pBuffer);
+	  pBuf->m_NeedFrame = false;
+	  m_historyQueue.pop_front();
+	}
+	CLog::LogF(LOGDEBUG, "RTX Video Processor: Flushed deinterlacing history queue due to seek/skip.");
   }
   if(pMultithread)
   {
@@ -2276,7 +2284,7 @@ void CRTXVideoProcessor::DebugBypassToDisplay(ID3D11Texture2D* pOutputWindowText
 	);
   }
 }
-bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx)
+bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx)
 {
   if(!m_bInitialized || !m_pVideoContext || !m_pVideoProcessor)
   {
@@ -2304,19 +2312,23 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
   bool isNewTexturePass = (bIsInterlaced && fieldIndex == 1) ? false : true;
   if(isNewTexturePass)
   {
-	// Run your existing queue aging logic ONLY when a physically new texture arrives
-	m_historyQueue.push_back(pInputView);
+	CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(pBuffer);
+	pBuf->m_NeedFrame = true;
+	m_historyQueue.push_back(SViewElement{pInputView, pBuffer});
 
 	UINT totalNeeded = 1 + m_numPastFrames + m_numFutureFrames;
 	if(m_historyQueue.size() < totalNeeded)
 	{
-	  // Not enough frame depth built up yet to execute a motion-adaptive blit
+	  // Wait for more frames
 	  return false;
 	}
 
 	while(m_historyQueue.size() > totalNeeded)
 	{
-	  m_historyQueue.pop_front(); // Evict oldest frame past the boundary
+	  // Evict oldest frame
+	  CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(m_historyQueue.front().pBuffer);
+	  pBuf->m_NeedFrame = false;
+	  m_historyQueue.pop_front(); 
 	}
   }
   else
@@ -2335,13 +2347,13 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
   std::vector<ID3D11VideoProcessorInputView*> pastSurfaces(m_numPastFrames, nullptr);
   std::vector<ID3D11VideoProcessorInputView*> futureSurfaces(m_numFutureFrames, nullptr);
   for(UINT i = 0; i < m_numPastFrames; i++) {
-	pastSurfaces [i] = m_historyQueue [i].Get();  }
+	pastSurfaces [i] = m_historyQueue [i].inputView.Get();  }
   for(UINT i = 0; i < m_numFutureFrames; i++) {
-	futureSurfaces [i] = m_historyQueue [currentFrameIndex + 1 + i].Get();  }
+	futureSurfaces [i] = m_historyQueue [currentFrameIndex + 1 + i].inputView.Get();  }
 
   D3D11_VIDEO_PROCESSOR_STREAM streamData = {};
   streamData.Enable = TRUE;
-  streamData.pInputSurface = m_historyQueue [currentFrameIndex].Get(); // Current Frame Target
+  streamData.pInputSurface = m_historyQueue [currentFrameIndex].inputView.Get(); // Current Frame Target
   streamData.PastFrames = m_numPastFrames;
   streamData.ppPastSurfaces = pastSurfaces.data();
   streamData.FutureFrames = m_numFutureFrames;
@@ -2387,34 +2399,11 @@ void CRendererPL::OnRtxSettingChanged()
   CLog::LogF(LOGDEBUG, "RTX Engine: UI setting toggle flagged for deferred render-thread execution.");
 }
 
-#if 0
-void CRTXVideoProcessor::EnableNvidiaVideoExtension()
-{
-  // The official, undocumented NVIDIA RTX Video Extension GUID
-  // {F11516F4-656A-4A73-A3C0-FE054A6E7D2E}
-  static const GUID NV_RTX_VIDEO_EXTENSION_GUID =
-  {0xf11516f4, 0x656a, 0x4a73, { 0xa3, 0xc0, 0xfe, 0x05, 0x4a, 0x6e, 0x7d, 0x2e }};
-
-  // Struct size must match what the driver expects for custom caps
-  struct NV_VIDEO_PROCESSOR_CAPS {
-	UINT Version;
-	UINT ExtensionId;
-	UINT EnableRtxVsr;
-	UINT EnableRtxHdr;
-  } nvCaps = {1, 0x1, 1, 1}; // Version 1, Toggle both ON (1)
-
-  // Send the custom extension payload to the driver context
-  Microsoft::WRL::ComPtr<ID3D11VideoContext> pVideoContext;
-  m_pVideoContext->VideoProcessorSetStreamExtension(m_pVideoProcessor.Get(), 0, &NV_RTX_VIDEO_EXTENSION_GUID, sizeof(nvCaps), &nvCaps);
-}
-#else
-
-
-constexpr GUID GUID_NVIDIA_PPE_INTERFACE = {	0xd43ce1b3, 0x1f4b, 0x48ac, {0xba, 0xee, 0xc3, 0xc2, 0x53, 0x75, 0xe6, 0xf7}};
+constexpr GUID GUID_NVIDIA_PPE_INTERFACE = { 0xd43ce1b3, 0x1f4b, 0x48ac, {0xba, 0xee, 0xc3, 0xc2, 0x53, 0x75, 0xe6, 0xf7}};
 constexpr UINT kStreamExtensionVersionV1 = 0x1;
 constexpr UINT kStreamExtensionMethodSuperResolution = 0x2;
 
-void CRTXVideoProcessor::EnableNvidiaVideoExtension()
+void CRTXVideoProcessor::EnableNvidiaVideoSuperResolution(bool bEnable)
 {
   struct NvidiaStreamExt
   {
@@ -2423,16 +2412,54 @@ void CRTXVideoProcessor::EnableNvidiaVideoExtension()
 	UINT enable;
   };
 
-  NvidiaStreamExt ext = {kStreamExtensionVersionV1, kStreamExtensionMethodSuperResolution, 1u};
+  NvidiaStreamExt ext = {kStreamExtensionVersionV1, kStreamExtensionMethodSuperResolution, bEnable ? 1u : 0u};
 
   HRESULT hr = m_pVideoContext->VideoProcessorSetStreamExtension(m_pVideoProcessor.Get(), 0, &GUID_NVIDIA_PPE_INTERFACE, sizeof(ext), &ext);
   if(FAILED(hr))
   {
-	//CLog::LogF(LOGWARNING, "Failed to set the NVIDIA video process stream extension with error {}.", CWIN32Util::FormatHRESULT(hr));
+	CLog::LogF(LOGERROR, "Failed to set the NVIDIA video process stream extension with error {}", hr);
 	return;
   }
 
-  CLog::LogF(LOGINFO, "RTX Video Super Resolution request enable successfully");
-  //m_superResolutionEnabled = true;
+
+  //CLog::LogF(LOGDEBUG, "RTX Video Super Resolution request enable successfully");
 }
-#endif
+
+// {FDD62BB4-620B-4FD7-9AB3-1E59D0D544B3}
+constexpr GUID kNvidiaTrueHDRInterfaceGUID = { 0xfdd62bb4, 0x620b, 0x4fd7, {0x9a, 0xb3, 0x1e, 0x59, 0xd0, 0xd5, 0x44, 0xb3}};
+constexpr UINT kStreamExtensionVersionV4 = 0x4;
+constexpr UINT kStreamExtensionMethodTrueHDR = 0x3;
+
+// 3. THE EXACT ALIGNED PACKING STRUCT REQUIRED BY THE DRIVER
+struct NV_RTX_HDR_STREAM_EXT
+{
+  UINT version;
+  UINT method;
+  UINT enable : 1;  // Bit-field optimization!
+  UINT reserved : 31;
+};
+
+void CRTXVideoProcessor::EnableNvidiaRtxVideoHdr(bool bEnable)
+{
+  if(!m_pVideoProcessor || !m_pVideoContext) return;
+
+  // Build the Version 4 bit-field data packet structure
+  NV_RTX_HDR_STREAM_EXT hdrExt = {};
+  hdrExt.version = kStreamExtensionVersionV4;     // Must be 4
+  hdrExt.method = kStreamExtensionMethodTrueHDR; // Must be 3
+  hdrExt.enable = bEnable ? 1u : 0u;             // Toggle
+
+  // Transmit to the driver context utilizing the unique HDR interface key
+  HRESULT hr = m_pVideoContext->VideoProcessorSetStreamExtension(
+	m_pVideoProcessor.Get(),
+	0, // Stream Index 0
+	&kNvidiaTrueHDRInterfaceGUID, // Use the new GUID!
+	sizeof(hdrExt),
+	&hdrExt
+  );
+
+  if(FAILED(hr))
+  {
+	CLog::LogF(LOGERROR, "RTX Engine: Failed to inject TrueHDR stream extension. Error: {}", hr);
+  }
+}

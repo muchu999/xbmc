@@ -80,7 +80,7 @@ public:
   bool InitializePipeline(unsigned int width, unsigned int height, unsigned int iFlags, unsigned int m_viewWidth, unsigned int m_viewHeight);
   void ProcessVideoFrame(ID3D11VideoProcessorInputView* inputView, ID3D11VideoProcessorOutputView* outputView);
   void UninitializePipeline();
-  bool ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx);
+  bool ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx);
   void DebugBypassToDisplay(ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4]);
   bool ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr);
   bool EnsureProcessorSize(UINT inW, UINT inH, unsigned int iFlags, UINT outW, UINT outH);
@@ -93,7 +93,8 @@ public:
   void EnablePipeline() { m_isRtxPipelineEnabled = true; }
   void DisablePipeline() { m_isRtxPipelineEnabled = false; }
   bool IsStreamHdr() const { return m_bStreamIsHDR; }
-  void EnableNvidiaVideoExtension();
+  void EnableNvidiaVideoSuperResolution(bool bEnable);
+  void EnableNvidiaRtxVideoHdr(bool bEnable);
   const unsigned int m_canvasWidth = 3840;
   const unsigned int m_canvasHeight = 2160;
   uint64_t m_lastFrameIdx = 0;
@@ -113,15 +114,20 @@ private:
 
   // Deque to cache incoming frame views. 
   // They must remain alive in VRAM until pushed out of the tracking history window.
-  std::deque<Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView>> m_historyQueue;
+  struct SViewElement
+  {
+	Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView> inputView;
+	CRenderBuffer* pBuffer;
+  };
 
+  std::deque<SViewElement> m_historyQueue;
 };
 
 class CRendererPL : public CRendererBase
 {
     CRect ApplyTransforms(const CRect& destRect) const;
-	class CRenderBufferImpl;
 public:
+  class CRenderBufferImpl;
   ~CRendererPL();
   bool UploadBuffer(CRenderBuffer* buffer) override;
 
@@ -198,6 +204,11 @@ private:
   int m_FrameMixerQueueMore = 0;
   int m_FrameMixerQueueErr = 0;
   double m_ScreenFps = 0.0;
+  int m_lastFrameIdx;
+  int m_lastFieldIndex;
+  bool m_bLastNvSuperResolution;
+  bool m_bLastNvRtxHdr;
+
 
   int m_FrameMixerQueueResets = 0;
 
@@ -228,7 +239,7 @@ private:
   bool m_bUseNvRtxHdr = false;
   bool m_bUseNvSuperResolution = false;
   bool m_bPendingRtxToggleStateChange = false;
-
+  std::optional<bool> m_bPreviousUseNvSuperResolution;
 };
 
 class CRendererPL::CRenderBufferImpl : public CRenderBuffer
