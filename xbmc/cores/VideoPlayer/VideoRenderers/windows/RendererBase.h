@@ -161,6 +161,8 @@ protected:
   bool CreateRenderBuffer(int index);
   void DeleteRenderBuffer(int index);
 
+  
+  virtual void RenderStart(CRenderBuffer* rb) {};
   virtual void ProcessHDR(CRenderBuffer* rb);
   /*!
    * \brief Call before rendering begins to find out if rendering will be attempted as SDR or HDR.

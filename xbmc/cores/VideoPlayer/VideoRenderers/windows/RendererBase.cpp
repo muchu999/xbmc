@@ -262,6 +262,7 @@ void CRendererBase::Render(CD3DTexture& target, const CRect& sourceRect, const C
     return;
 
   CRenderBuffer* buf = m_renderBuffers[m_iBufferIndex];
+  RenderStart(buf);
   if (!buf->IsLoaded())
   {
     if (!UploadBuffer(buf))

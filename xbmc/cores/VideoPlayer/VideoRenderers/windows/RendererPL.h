@@ -129,6 +129,7 @@ class CRendererPL : public CRendererBase
 public:
   class CRenderBufferImpl;
   ~CRendererPL();
+  void RenderStart(CRenderBuffer* rb);
   bool UploadBuffer(CRenderBuffer* buffer) override;
 
   bool CreateTempTarget(unsigned int width, unsigned int height, bool dynamic = false, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN, bool bUseUnordered = false);
@@ -170,7 +171,7 @@ protected:
   void CheckVideoParameters() override;
   void RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoints)[4], uint32_t flags, double renderPts = 0.0) override;
   void Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoints) [4], uint32_t flags, double renderPts = 0.0);
-  void RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoints) [4], uint32_t flags, double renderPts = 0.0);
+  void RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoints) [4], uint32_t flags, bool canSip);
   void ApplyGeometry(CVideoSettings& vs, CRect& sourceRect, CRect& dst, pl_frame& frameIn, pl_frame& frameOut);
   static void InitializeFrameInFieldsMix(pl_frame* frameIn, CRendererPL::CRenderBufferImpl* buffer);
   void InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRenderBufferImpl* buffer);
@@ -268,7 +269,6 @@ public:
   AVDOVIDmData doviExt{ 0 };
   bool hasDoviExt = false;
   bool m_NeedFrame = false;
-  bool bUseTempBuffer = false;
   pl_chroma_location m_chromaLocation = PL_CHROMA_UNKNOWN;
 
   // For debugInfo
