@@ -50,7 +50,7 @@
 using namespace XFILE;
 using namespace Microsoft::WRL;
 
-//DXGI_FORMAT TempTargetDxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+//DXGI_FORMAT TempTargetDxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;  //couldn't figure that one out yet, enabling super resolution result in over saturation, changing min_luma to 5 brings us closer but it is not a solution.
 DXGI_FORMAT TempTargetDxgiFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 
 CRendererPL::~CRendererPL()
@@ -63,11 +63,8 @@ CRendererPL::~CRendererPL()
   Flush(false); // Must free buffers before resetting libplacebo
   PL::PLInstance::Get()->Reset(); //cl reset the rest
 
-  //cl Force restore default color space on exit, non-hdr content messes up hdr color space, should save and restore instead
-  if(DX::Windowing()->IsHDROutput())
-	DX::Windowing()->SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
-  else
-	DX::Windowing()->SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+  //cl Force restore default color space on exit, non-hdr content messes up hdr color space
+  DX::DeviceResources::Get()->SetHdrColorSpace();  // Windowing class instead?
 }
 
 
@@ -307,7 +304,10 @@ bool CRTXVideoProcessor::ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcesso
 	else
 	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
   else
-	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+  {
+	static DXGI_COLOR_SPACE_TYPE color = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, color);
+  }
 
   return true;
 }
@@ -356,20 +356,6 @@ bool CRendererPL::Configure(const VideoPicture& picture, float fps, unsigned ori
   m_format = picture.videoBuffer->GetFormat();
 
   m_RtxVideoProcessor.EvaluateRtxCapability(picture);
-  if(m_RtxVideoProcessor.IsRtxPipelineViable() && m_videoSettings.m_PlaceboNvRtxPipelineEnabled) 
-  {
-	if(!m_RtxVideoProcessor.IsInitialized())
-	  if(!m_RtxVideoProcessor.InitializePipeline(picture.iWidth, picture.iHeight, picture.iFlags, m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight))
-	  {
-		CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
-		return false;
-	  }
-	  else
-	  {
-		m_RtxVideoProcessor.EnablePipeline();
-	  }
-  }
-
   return true;
 }
 
@@ -474,23 +460,6 @@ void CRendererPL::CheckVideoParameters()
 
   }
   bool bUseUnordered = !m_videoSettings.m_placeboOptions->getPlOptions()->params.skip_target_clearing ? true : false;
-#if 0
-  if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
-  {
-	// If super resolution setting changed, flag it to make change at the beginning of frame rendering.
-	if(!m_bPreviousUseNvSuperResolution.has_value() || (m_bPreviousUseNvSuperResolution != m_bUseNvSuperResolution))
-    {
-	  CRendererPL::OnRtxSettingChanged();
-    }
-    m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
-
-	CreateTempTarget(m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight, false, TempTargetDxgiFormat, bUseUnordered);
-  }
-  else
-  {
-	//cl clean up?
-  }
-#endif
   CreateIntermediateTarget(m_viewWidth, m_viewHeight, false, DXGI_FORMAT_UNKNOWN, bUseUnordered); //cl DXGI_FORMAT_R10G10B10A2_UNORM);
 }
 
@@ -847,8 +816,46 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
   {
 	if(!m_RtxVideoProcessor.IsStreamHdr() && !m_bUseNvRtxHdr)
 	{
-	  frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
-	  frameIn->color.transfer = PL_COLOR_TRC_LINEAR;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+	  if(m_bUseNvSuperResolution)
+	  {
+		// When monitor is in HDR mode, super resolution will automatically output in HDR
+		if(DX::DeviceResources::Get()->IsHDROutput1())
+		{
+		  frameIn->color.primaries = PL_COLOR_PRIM_BT_2020;
+		  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		  {
+			frameIn->color.transfer = PL_COLOR_TRC_SCRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM PL_COLOR_TRC_SCRGB
+			frameIn->color.hdr = {};
+			frameIn->color.hdr.min_luma = 0.0005;  //cl ?
+			frameIn->color.hdr.max_luma = 1000.0;  //cl ?
+		  }
+		  else
+		  {
+			// Using super resolution in HDR mode result in a brighter image, not sure how to correct it
+			frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+			frameIn->color.hdr = {};
+			frameIn->color.hdr.min_luma = 0.0005;  //cl ?
+			frameIn->color.hdr.max_luma = 1000.0;  //cl ?
+
+		  }
+		}
+		else
+		{
+		  frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
+		  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+			frameIn->color.transfer = PL_COLOR_TRC_LINEAR;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+		  else
+			frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+		}
+	  }
+	  else
+	  {
+	    frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
+	    if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		  frameIn->color.transfer = PL_COLOR_TRC_SCRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM, PL_COLOR_TRC_SCRGB
+	    else
+	      frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+	  }
 	}
 	else
 	{
@@ -973,6 +980,7 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
   if(canSkip && buf->IsLoaded() && (buf->frameIdx == m_lastFrameIdx) && (fieldIndex == m_lastFieldIndex) && (m_bUseNvSuperResolution == m_bLastNvSuperResolution) && (m_bUseNvRtxHdr == m_bLastNvRtxHdr))
   {
 	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "Skipping blit for frameIdx: {}, fieldIndex: {}", buf->frameIdx, fieldIndex);
+
 	// Update source rect to the current output image for the next stage
 	sourceRect.x1 = destRect.left;
 	sourceRect.y1 = destRect.top;
@@ -1035,7 +1043,6 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
 
-	m_RtxVideoProcessor.ConfigureHdrColorSpaces(m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
 
 
 	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
@@ -1058,13 +1065,12 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamRotation(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, false, static_cast<D3D11_VIDEO_PROCESSOR_ROTATION>(0 / 90));
 
+	m_RtxVideoProcessor.ConfigureHdrColorSpaces(m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
 	m_RtxVideoProcessor.EnableNvidiaVideoSuperResolution(m_bUseNvSuperResolution);
 	m_RtxVideoProcessor.EnableNvidiaRtxVideoHdr(m_bUseNvRtxHdr);
 	
-	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "srcRect: {}x{}, destRect: {}x{}", srcRect.right- srcRect.left, srcRect.bottom - srcRect.top, destRect.right - destRect.left, destRect.bottom - destRect.top);
+	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "srcRect: {}x{}, destRect: {}x{}", srcRect.right- srcRect.left + 1, srcRect.bottom - srcRect.top + 1, destRect.right - destRect.left + 1, destRect.bottom - destRect.top + 1);
 	bool blitSuccess = m_RtxVideoProcessor.ExecuteBlit(pInputView.Get(), buf, m_pTempTargetView.Get(), buffer->pictureFlags, flags, buf->frameIdx);
-	//m_RtxVideoProcessor.DebugBypassToDisplay(target.Get(), m_TempTarget.Get(), destPoints); return;
-
 	if(!blitSuccess)
 	{
 	  CLog::LogF(LOGERROR, "RTX Engine: ExecuteBlit failed");
@@ -1073,37 +1079,11 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	{
 	  pMultithread->Leave();
 	}
+    //#define BYPASS_LIBPLACEBO 1
+    #ifdef BYPASS_LIBPLACEBO
+	  return;
+    #endif
   }
-#if 0
-  // Wrap the output texture for libplacebo
-  pl_d3d11_wrap_params params = {};
-  params.tex = m_TempTarget.Get();
-  params.w = m_TempTarget.GetWidth();
-  params.h = m_TempTarget.GetHeight();
-  params.fmt = TempTargetDxgiFormat;
-  params.array_slice = 0;               
-
-  buffer->pltex [0] = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params);
-  if(!buffer->pltex [0])
-  {
-	CLog::LogF(LOGERROR, "libplacebo failed to wrap the RTX HDR output texture.");
-	return;
-  }
-
-  // Populate libplacebo plane info for a standard interleaved RGB plane
-  buffer->plplanes [0].texture = buffer->pltex [0];
-  buffer->plplanes [0].components = 3; // R, G, B channels
-  buffer->plplanes [0].component_mapping [0] = PL_CHANNEL_R;
-  buffer->plplanes [0].component_mapping [1] = PL_CHANNEL_G;
-  buffer->plplanes [0].component_mapping [2] = PL_CHANNEL_B;
-  buffer->plplanes [0].component_mapping [3] = PL_CHANNEL_NONE;
-
-  // Signal to the rest of Kodi/libplacebo that this image has exactly 1 RGB plane now
-  //if(buffer->plFormat.num_planes == -1)  //cl optimize
-  {
-	PL::PLInstance::Get()->fill_d3d_format(&buffer->plFormat, TempTargetDxgiFormat);
-  }
-#endif
   // Update source rect to the current output image for the next stage
   sourceRect.x1 = destRect.left;
   sourceRect.y1 = destRect.top;
@@ -1124,22 +1104,32 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
 	return;
   CRenderBufferImpl* buffer = static_cast<CRenderBufferImpl*>(buf);
   bool canSkip = !m_bPendingRtxToggleStateChange;
-  if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
+  if(m_bPendingRtxToggleStateChange)
   {
-	if(m_bPendingRtxToggleStateChange)
+	// Force a Reset the swapchain color pipeline or it will be incorrect when switching mid-stream
+	DX::DeviceResources::Get()->SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);  //cl Windowing class instead?
+	DX::DeviceResources::Get()->SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);  //cl Windowing class instead?
+	DX::DeviceResources::Get()->SetHdrColorSpace();  //cl Windowing class instead?
+
+	// Reset libplacebo shader cache
+	pl_renderer renderer = PL::PLInstance::Get()->GetRenderer();
+	if(renderer)
 	{
-	  m_bPendingRtxToggleStateChange = false;
-
-	  pl_renderer renderer = PL::PLInstance::Get()->GetRenderer();
-	  if(renderer)
-	  {
-		pl_renderer_flush_cache(renderer);
-	  }
-
-	  CLog::LogF(LOGDEBUG, "RTX Engine: Render thread successfully executed deferred pipeline flush.");
+	  pl_renderer_flush_cache(renderer);
 	}
 
+	m_bPendingRtxToggleStateChange = false;
+	CLog::LogF(LOGDEBUG, "RTX Engine: Render thread successfully executed deferred pipeline flush.");
+  }
+  if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
+  {
 	RenderDx(target, sourceRect, destPoints, flags, canSkip);
+    #ifdef BYPASS_LIBPLACEBO
+	  // only works if temp target and intermediate texture have same format...
+	  m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_TempTarget.Get(), destPoints);
+	  sourceRect = dst; //cl Pass dst to next render stage...
+	  return;
+    #endif
 	Render(target, sourceRect, destPoints, flags, renderPts);
 
   }
@@ -1631,7 +1621,9 @@ void CRendererPL::RenderSingle(CRenderBufferImpl* buffer, double renderPts, CVid
 	// Null check protection guard to prevent early startup crashes
 	FrameQuery& current_frame = m_queryRing [m_currentWriteSlot];
 
-	//frameOut.color.transfer = PL_COLOR_TRC_GAMMA22;
+	//if(!this->m_RtxVideoProcessor.IsRtxPipelineEnabled())
+	  //frameIn.color.transfer = PL_COLOR_TRC_GAMMA22;
+
 	if(!current_frame.is_active && current_frame.disjoint && current_frame.start && current_frame.end)
 	{
 	  pDeviceContext->Begin(current_frame.disjoint);
@@ -1953,7 +1945,7 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
 void CRendererPL::RenderStart(CRenderBuffer* buffer)
 {
   CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
-  if(!buf)
+  if(!buf || !buf->videoBuffer)
 	return;
   // Check RTX setting changes
   if(m_RtxVideoProcessor.IsRtxPipelineViable() && m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
@@ -1998,24 +1990,28 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	  CRendererPL::OnRtxSettingChanged();
 	}
   }
-  else if(m_RtxVideoProcessor.IsRtxPipelineEnabled() && !m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
+  else if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
   {
-	//cl should destroy tempTarget, views??? 
-	if(buf->IsLoaded())
+	if(!m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
 	{
-	  if(buf->pltex [0])
+	  if(buf->IsLoaded())
 	  {
-		for(int i = 0; i < buf->plFormat.num_planes; i++)
+		if(buf->pltex [0])
 		{
-		  pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
+		  for(int i = 0; i < buf->plFormat.num_planes; i++)
+		  {
+			pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
+		  }
 		}
+		buffer->ResetLoaded ();
 	  }
-      buffer->ResetLoaded (); 
-	}
 
-	m_RtxVideoProcessor.DisablePipeline();
-	m_RtxVideoProcessor.FlushHistoryQueue();
-	CRendererPL::OnRtxSettingChanged();
+	  m_RtxVideoProcessor.DisablePipeline();
+	  m_RtxVideoProcessor.FlushHistoryQueue();
+	  m_TempTarget.Release();
+	  m_RtxVideoProcessor.UninitializePipeline();
+	  CRendererPL::OnRtxSettingChanged();
+	}
   }
 
   m_bUseNvRtxHdr = false;
@@ -2237,9 +2233,6 @@ void CRendererPL::InitProfiling() {
 }
 void CRTXVideoProcessor::UninitializePipeline()
 {
-  // Reset output view first before tearing down the parent video device
-  //cl m_pOutputView.Reset();
-
   m_pVideoProcessor.Reset();
   m_pVideoEnumerator.Reset();
   m_pVideoContext.Reset();
@@ -2317,8 +2310,6 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   //m_pVideoEnumerator->GetVideoProcessorCaps(&processorCaps);
   D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS rateCaps = {};
   m_pVideoEnumerator->GetVideoProcessorRateConversionCaps(0, &rateCaps);
-
-  // Store these values as member variables!
   m_numPastFrames = rateCaps.PastFrames;   
   m_numFutureFrames = rateCaps.FutureFrames;
 
@@ -2336,8 +2327,7 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   }
   else
   {
-	CLog::LogF(LOGWARNING, "unable to retrieve ID3D11VideoContext1 to allow usage of shaders on "
-	  "video processor output surfaces.");
+	CLog::LogF(LOGWARNING, "unable to retrieve ID3D11VideoContext1 to allow usage of shaders on video processor output surfaces.");
   }
   D3D11_VIDEO_COLOR color;
   color.YCbCr = {0.0625f, 0.5f, 0.5f, 1.0f}; // black color
@@ -2378,7 +2368,7 @@ void CRTXVideoProcessor::FlushHistoryQueue()
 
 }
 
-void CRTXVideoProcessor::DebugBypassToDisplay(ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4])
+void CRTXVideoProcessor::DebugBypassToDisplay(CRect& srcRect, ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4])
 {
   // Get the immediate context
   ID3D11DeviceContext* pGraphicsContext = nullptr;
@@ -2386,41 +2376,29 @@ void CRTXVideoProcessor::DebugBypassToDisplay(ID3D11Texture2D* pOutputWindowText
   
   if(!m_pVideoContext || !pTempTarget) return;
 
-  // Validate that the textures match types and formats before blasting memory
-  D3D11_TEXTURE2D_DESC srcDesc, destDesc;
-  pTempTarget->GetDesc(&srcDesc);
+  //cl we should validate that the textures match types and formats before blasting memory...
+  D3D11_TEXTURE2D_DESC destDesc;
   pOutputWindowTexture->GetDesc(&destDesc);
 
-  // SAFETY CHECK
-  if(srcDesc.Width == destDesc.Width && srcDesc.Height == destDesc.Height)
-  {
-	// Pure 1:1 hardware copy 
-	pGraphicsContext->CopyResource(pOutputWindowTexture, pTempTarget);
-  }
-  else
-  {
-	// Handles mismatched dimensions by copying a strict matching box
-	D3D11_BOX sourceBox = {};
-	sourceBox.left = 0;
-	sourceBox.top = 0;
-	sourceBox.right = (srcDesc.Width < destDesc.Width) ? srcDesc.Width : destDesc.Width;
-	sourceBox.bottom = (srcDesc.Height < destDesc.Height) ? srcDesc.Height : destDesc.Height;
-	sourceBox.front = 0;
-	sourceBox.back = 1;
-
-	pGraphicsContext->CopySubresourceRegion(
-	  pOutputWindowTexture, 0, // Destination texture and subresource index
-	  0, destPoints [0].y, 0,  // Destination X, Y, Z offsets
-	  pTempTarget, 0,          // Source texture and subresource index
-	  &sourceBox               // Boundary box to read from
-	);
-  }
+  D3D11_BOX sourceBox = {};
+  sourceBox.left = 0;
+  sourceBox.top = 0;
+  sourceBox.right = (srcRect.Width() < destDesc.Width) ? srcRect.Width() : destDesc.Width;
+  sourceBox.bottom = (srcRect.Height() < destDesc.Height) ? srcRect.Height() : destDesc.Height;
+  sourceBox.front = 0;
+  sourceBox.back = 1;
+  
+  pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x, destPoints [0].y, 0, pTempTarget, 0, &sourceBox);
+  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x+destDesc.Width- srcRect.Width(), destPoints [0].y+0, 0, pTempTarget, 0, &sourceBox);
+  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x+destDesc.Width - srcRect.Width(), destPoints [0].y+destDesc.Height- srcRect.Height(), 0, pTempTarget, 0, &sourceBox);
+  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, 0, destPoints[0].x+destDesc.Height - srcRect.Height(), destPoints [0].y+0, pTempTarget, 0, &sourceBox);
 }
+
 bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx)
 {
   if(!m_bInitialized || !m_pVideoContext || !m_pVideoProcessor)
   {
-	CLog::LogF(LOGERROR, "Unitialized pipeline");
+	CLog::LogF(LOGERROR, "Uninitialized pipeline");
 	return false;
   }
 
@@ -2442,6 +2420,7 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
   unsigned int streamFrameIndex = bIsInterlaced ? frameIdx + fieldIndex : frameIdx / 2; //cl
 
   // Only update queue for new complete frames
+  int totalNeeded = 1 + m_numPastFrames + m_numFutureFrames;
   bool isNewTexturePass = (bIsInterlaced && fieldIndex == 1) ? false : true;
   if(isNewTexturePass)
   {
@@ -2449,7 +2428,6 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	pBuf->m_NeedFrame = true;
 	m_historyQueue.push_back(SViewElement{pInputView, pBuffer});
 
-	UINT totalNeeded = 1 + m_numPastFrames + m_numFutureFrames;
 	while(m_historyQueue.size() > totalNeeded)
 	{
 	  // Evict oldest frame
@@ -2458,21 +2436,25 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	  m_historyQueue.pop_front(); 
 	}
   }
-  // Keep current frame as the last one received until future frame come in, There will be a couple of repeated frames on screen...
-  // Another option is to repeat images in the ppPastSurfaces //cl
-  UINT currentSize = m_historyQueue.size();
-  UINT actualCurrentFrameIndex = std::min(m_numPastFrames+1, currentSize) - 1;
-  UINT actualPastFrames = actualCurrentFrameIndex;
-  UINT actualFutureFrames = currentSize - actualCurrentFrameIndex - 1;
+
+  int currentSize = m_historyQueue.size();
+#if 0
+  int actualCurrentFrameIndex = std::min(m_numPastFrames+1, currentSize) - 1; //Keep current frame as the last one received until future frames come in, There will be a couple of repeated frames on screen then...
+#else
+  int actualCurrentFrameIndex = std::max(m_numPastFrames - (totalNeeded- currentSize), 0); //Keep frame 0 as the last one received untill we can increase, there will be a couple of repeated frames at the start...
+#endif
+  int actualPastFrames = actualCurrentFrameIndex;
+  int actualFutureFrames = currentSize - actualPastFrames - 1;
 
   // Construct the input arrays for the driver
   std::vector<ID3D11VideoProcessorInputView*> pastSurfaces(actualPastFrames, nullptr);
   std::vector<ID3D11VideoProcessorInputView*> futureSurfaces(actualFutureFrames, nullptr);
   for(UINT i = 0; i < actualPastFrames; i++) {
-	pastSurfaces [i] = m_historyQueue [i].inputView.Get();  }
+	pastSurfaces [i] = m_historyQueue [i].inputView.Get();
+  }
   for(UINT i = 0; i < actualFutureFrames; i++) {
-	futureSurfaces [i] = m_historyQueue [actualCurrentFrameIndex + 1 + i].inputView.Get();  }
-
+	futureSurfaces [i] = m_historyQueue [actualCurrentFrameIndex + 1 + i].inputView.Get();
+  }
   D3D11_VIDEO_PROCESSOR_STREAM streamData = {};
   streamData.Enable = TRUE;
   streamData.pInputSurface = m_historyQueue [actualCurrentFrameIndex].inputView.Get(); // Current Frame Target

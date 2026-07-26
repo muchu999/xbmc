@@ -254,7 +254,8 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
     long fEvents = SHCNE_DRIVEADD | SHCNE_DRIVEREMOVED | SHCNE_MEDIAREMOVED | SHCNE_MEDIAINSERTED;
     SHChangeNotifyRegister(hWnd, SHCNRF_ShellLevel | SHCNRF_NewDelivery, fEvents, WM_MEDIA_CHANGE, 1, &shcne);
     RegisterDeviceInterfaceToHwnd(USB_HID_GUID, hWnd, &hDeviceNotify);
-    return 0;
+	DX::Windowing()->UpdateHdrStatus();
+	return 0;
   }
 
   if (uMsg == WM_DESTROY)
@@ -569,6 +570,7 @@ LRESULT CALLBACK CWinEventsWin32::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, L
     case WM_DISPLAYCHANGE:
     {
       CLog::LogFC(LOGDEBUG, LOGWINDOWING, "display change event");
+	  DX::Windowing()->UpdateHdrStatus();
       if (DX::Windowing()->IsTogglingHDR() || DX::Windowing()->IsAlteringWindow())
         return (0);
 

@@ -128,10 +128,11 @@ namespace DX
     void ApplyDisplaySettings();
 
     // HDR display support
-    HDR_STATUS ToggleHDR();
+	HDR_STATUS ToggleHDR();
     void SetHdrMetaData(DXGI_HDR_METADATA_HDR10& hdr10) const;
     void SetHdrColorSpace(const DXGI_COLOR_SPACE_TYPE colorSpace);
-    bool IsHDROutput() const { return m_IsHDROutput; }
+	void SetHdrColorSpace();
+	bool IsHDROutput() const { return m_IsHDROutput; }
 	bool IsHDROutput1() const;
 
     bool IsTransferPQ() const { return m_IsTransferPQ; }

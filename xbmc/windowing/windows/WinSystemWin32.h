@@ -15,6 +15,8 @@
 
 #include <shellapi.h>
 #include <vector>
+#include <HDRStatus.h>
+#include <WIN32Util.h>
 
 static const DWORD WINDOWED_STYLE = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 static const DWORD WINDOWED_EX_STYLE = NULL;
@@ -110,6 +112,8 @@ public:
   HWND GetHwnd() const { return m_hWnd; }
   bool IsAlteringWindow() const { return m_IsAlteringWindow; }
   void SetAlteringWindow(bool altering) { m_IsAlteringWindow = altering; }
+  void UpdateHdrStatus() { m_HdrStatus = (CWIN32Util::GetWindowsHDRStatus() == HDR_STATUS::HDR_ON); }
+  bool getHdrStatus() { return m_HdrStatus; };
   bool IsTogglingHDR() const { return m_IsTogglingHDR; }
   void SetTogglingHDR(bool toggling);
   virtual bool DPIChanged(WORD dpi, RECT windowRect) const;
@@ -180,6 +184,7 @@ protected:
   HICON m_hIcon;
   bool m_ValidWindowedPosition;
   bool m_IsAlteringWindow;
+  bool m_HdrStatus{false};
   bool m_IsTogglingHDR{false};
 
   CCriticalSection m_resourceSection;

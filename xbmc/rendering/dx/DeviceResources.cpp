@@ -1996,6 +1996,21 @@ HDR_STATUS DX::DeviceResources::ToggleHDR()
   return hdrStatus;
 }
 
+void DX::DeviceResources::SetHdrColorSpace()
+{
+  if(m_IsHDROutput)
+  {
+	SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
+	m_IsHDROutput = true;
+  }
+  else
+  {
+	SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+	m_IsHDROutput = false;
+  }
+}
+
+
 void DX::DeviceResources::ApplyDisplaySettings()
 {
   CLog::LogF(LOGDEBUG, "Re-create swapchain due Display Settings changed");
@@ -2560,12 +2575,7 @@ void DX::DeviceResources::ReleaseProfilingQueries()
 
 bool DX::DeviceResources::IsHDROutput1() const 
 {
-  DXGI_SWAP_CHAIN_DESC1 desc;
-  HRESULT hr = DX::DeviceResources::Get()->GetSwapChain()->GetDesc1(&desc);
-  HDR_STATUS hdrStatus = CWIN32Util::GetWindowsHDRStatus();
-  const bool isHdrEnabled = (hdrStatus == HDR_STATUS::HDR_ON);
-
-  return (desc.Format == DXGI_FORMAT_R10G10B10A2_UNORM) && isHdrEnabled;
+  return (DX::Windowing()->getHdrStatus());
 }
 
 void DX::DeviceResources::LogThreadState(const std::string& location)

@@ -81,7 +81,7 @@ public:
   void ProcessVideoFrame(ID3D11VideoProcessorInputView* inputView, ID3D11VideoProcessorOutputView* outputView);
   void UninitializePipeline();
   bool ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx);
-  void DebugBypassToDisplay(ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4]);
+  void DebugBypassToDisplay(CRect& srcRect, ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4]);
   bool ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr);
   bool EnsureProcessorSize(UINT inW, UINT inH, unsigned int iFlags, UINT outW, UINT outH);
   void FlushHistoryQueue();
@@ -109,8 +109,8 @@ private:
   bool m_wasVsrEnabled = false;
   bool m_wasHdrEnabled = false;
 
-  UINT m_numPastFrames = 0;
-  UINT m_numFutureFrames = 0;
+  int m_numPastFrames = 0;
+  int m_numFutureFrames = 0;
 
   // Deque to cache incoming frame views. 
   // They must remain alive in VRAM until pushed out of the tracking history window.
