@@ -378,6 +378,22 @@ void PL::PLInstance::fill_d3d_format(pl_d3d_format* info, DXGI_FORMAT format)
 	strcpy(info->description, "p010");
 	break;
 
+  case DXGI_FORMAT_Y210:
+	info->bits.color_depth = 10;
+	info->bits.sample_depth = 16;
+	info->bits.bit_shift = 6;
+	info->planes [0] = DXGI_FORMAT_R16G16B16A16_UNORM; // Y plane
+	info->component_mapping [0][0] = PL_CHANNEL_Y;
+	info->component_mapping [0][1] = PL_CHANNEL_U;
+	info->component_mapping [0][2] = PL_CHANNEL_V;
+	info->component_mapping [0][3] = PL_CHANNEL_A;
+	info->components [0] = 4;
+	info->width_div [0] = 1;
+	info->height_div [0] = 1;
+	info->num_planes = 1;
+	strcpy(info->description, "y210");
+	break;
+
   case DXGI_FORMAT_P016:
 	info->bits.color_depth = 16;
 	info->bits.sample_depth = 16;
