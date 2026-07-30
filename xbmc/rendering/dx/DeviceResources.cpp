@@ -400,7 +400,7 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
   if(DX::SdkLayersAvailable())
   {
 	// If the project is in a debug build, enable debugging via SDK Layers with this flag.
-	// creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+	//creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
   }
 #endif
 
@@ -477,7 +477,7 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
   // Check shared textures support
   CheckNV12SharedTexturesSupport(); //cl 
 
-#if 0 //cl def _DEBUG
+#if 0 //def _DEBUG  //cl 
   if(SUCCEEDED(m_d3dDevice.As(&m_d3dDebug)))
   {
 	ComPtr<ID3D11InfoQueue> d3dInfoQueue;
@@ -536,7 +536,7 @@ void DX::DeviceResources::CreateDeviceResources()
   if (DX::SdkLayersAvailable())
   {
     // If the project is in a debug build, enable debugging via SDK Layers with this flag.
-    // creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+    //creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
   }
 #endif
 
@@ -617,7 +617,7 @@ void DX::DeviceResources::CreateDeviceResources()
   // Check shared textures support
   CheckNV12SharedTexturesSupport();
 
-#ifdef _DEBUG
+#if 0 //def _DEBUG //cl 
   if (SUCCEEDED(m_d3dDevice.As(&m_d3dDebug)))
   {
     ComPtr<ID3D11InfoQueue> d3dInfoQueue;
