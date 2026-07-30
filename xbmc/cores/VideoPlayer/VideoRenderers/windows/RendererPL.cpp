@@ -46,6 +46,7 @@
 #include <utils/StringUtils.h>
 #include <vector>
 #include <utility>
+#include <d3dcompiler.h>
 
 using namespace XFILE;
 using namespace Microsoft::WRL;
@@ -212,6 +213,7 @@ CRendererPL::CRendererPL(CVideoSettings& videoSettings) : CRendererBase(videoSet
   m_renderMethodName = "LibPlacebo";
   m_colorSpace = {};
   m_chromaLocation = PL_CHROMA_UNKNOWN;
+  InitializeComputeShader();
 }
 
 CRenderInfo CRendererPL::GetRenderInfo()
@@ -273,25 +275,72 @@ DXGI_FORMAT CRendererPL::GetDXGIFormat(AVPixelFormat format, DXGI_FORMAT default
   }
 }
 
-bool CRTXVideoProcessor::ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr)
+bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr)
 {
-  if(!m_pVideoContext) 
+  CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(pBuffer);
+  if(!m_pVideoContext)
 	return false;
+
+  if(pBuf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
+  {
+	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
+	bool isFullRange = pBuf->full_range;
+	bool isBT601 = false; //(pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525);
+	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
+	inColorSpace.RGB_Range = isFullRange ? 0u : 1u;     // 0 = Full (0-255), 1 = Limited (16-235)
+	inColorSpace.YCbCr_Matrix = isBT601 ? 0u : 1u;      // 0 = BT.601, 1 = BT.709
+	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
+	inColorSpace.Nominal_Range = isFullRange ? 2u : 1u; // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
+	m_pVideoContext->VideoProcessorSetStreamColorSpace(m_pVideoProcessor.Get(), 0u, &inColorSpace);
+  }
+  else
+  {
+	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
+	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
+	inColorSpace.RGB_Range = 0u;                        // 0 = Full (0-255), 1 = Limited (16-235)
+	inColorSpace.YCbCr_Matrix = 1u;                     // 0 = BT.601, 1 = BT.709
+	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
+	inColorSpace.Nominal_Range = 2u;                    // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
+	m_pVideoContext->VideoProcessorSetStreamColorSpace(m_pVideoProcessor.Get(), 0u, &inColorSpace);
+  }
+
+  D3D11_VIDEO_PROCESSOR_COLOR_SPACE outColorSpace = {};
+  outColorSpace.Usage = 0u;
+  outColorSpace.RGB_Range = 0u;
+  outColorSpace.YCbCr_Matrix = 1u;
+  outColorSpace.YCbCr_xvYCC = 1u;
+  outColorSpace.Nominal_Range = 2u;
+  m_pVideoContext->VideoProcessorSetOutputColorSpace(m_pVideoProcessor.Get(), &outColorSpace);
 
   // Get ID3D11VideoContext1
   Microsoft::WRL::ComPtr<ID3D11VideoContext1> pVideoContext1;
   HRESULT hr = m_pVideoContext.As(&pVideoContext1);
   if(FAILED(hr))
   {
-	// Fallback or warning: RTX Video HDR requires ID3D11VideoContext1 support
+	CLog::LogF(LOGERROR, "Failed to get ID3D11VideoContext1: {}", hr);
 	return false;
   }
-
-  // Input
-  // Most sub-4K video files are standard Rec. 709 with Limited/Studio Range (16-235)
-  // Safety check: If you are playing an ancient SD video, swap to Rec. 601
-  // if (m_currentStreamWidth < 1280) inputColorSpace = DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601;
-  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+  if(pBuf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
+  {
+	if((pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525))
+	{
+	  if(pBuf->full_range)
+		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P601);
+	  else
+		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601);
+	}
+	else
+	{
+	  if(pBuf->full_range)
+		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
+	  else
+		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+	}
+  }
+  else
+  {
+	pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+  }
 
   // Output
   // To trigger the RTX HDR engine, the output target color space MUST be configured as an HDR container. 
@@ -463,15 +512,215 @@ void CRendererPL::CheckVideoParameters()
   CreateIntermediateTarget(m_viewWidth, m_viewHeight, false, DXGI_FORMAT_UNKNOWN, bUseUnordered); //cl DXGI_FORMAT_R10G10B10A2_UNORM);
 }
 
+bool CRendererPL::InitializeComputeShader()
+{
+  // 1. Paste your HLSL Compute Shader code directly as an inline string
+  const char* shaderCode = R"(
+        Texture2D<float4> InputRGB : register(t0);       
+        RWTexture2D<uint> OutputY   : register(u0);      
+        RWTexture2D<uint2> OutputUV : register(u1);      
+
+        [numthreads(16, 16, 1)]
+        void main(uint3 DTid : SV_DispatchThreadID)
+        {
+            float4 rgb = InputRGB.Load(int3(DTid.xy, 0));
+            
+            // Rec.709 RGB to YUV matrix conversion
+            float Y  =  0.2126f * rgb.r + 0.7152f * rgb.g + 0.0722f * rgb.b;
+            float U  = -0.1146f * rgb.r - 0.3854f * rgb.g + 0.5000f * rgb.b + 0.5f;
+            float V  =  0.5000f * rgb.r - 0.4542f * rgb.g - 0.0458f * rgb.b + 0.5f;
+            
+            // Scale and bit-shift left by 6 bits for 10-bit P010 packing rules
+            uint finalY  = (uint)(saturate(Y) * 1023.0f) << 6;
+            uint finalU  = (uint)(saturate(U) * 1023.0f) << 6;
+            uint finalV  = (uint)(saturate(V) * 1023.0f) << 6;
+            
+            OutputY[DTid.xy] = finalY;
+            
+            // Subsample Chroma for 4:2:0 layout on even row/column boundaries
+            if ((DTid.x % 2 == 0) && (DTid.y % 2 == 0))
+            {
+                OutputUV[DTid.xy / 2] = uint2(finalU, finalV);
+            }
+        }
+    )";
+
+  Microsoft::WRL::ComPtr<ID3DBlob> shaderBlob;
+  Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+
+  // 2. COMPILE THE CODE STRING
+  HRESULT hr = D3DCompile(
+	shaderCode,              // Source code string pointer
+	strlen(shaderCode),      // Size of the code string
+	nullptr,                 // Optional macro definition pointer
+	nullptr,                 // Optional include interfaces pointer
+	nullptr,
+	"main",                  // ENTRY POINT FUNCTION NAME IN HLSL
+	"cs_5_0",                // COMPUTE SHADER ARCHITECTURE TARGET PROFILE 5.0
+	D3DCOMPILE_OPTIMIZATION_LEVEL3, // Enforce ultra-fast execution compilation flags
+	0,                       // Effect compilation flags (none)
+	&shaderBlob,             // Receives output bytecode buffer block
+	&errorBlob               // Receives compiler warnings/errors logging text
+  );
+
+  // 3. CAPTURE COMPILER SYNTAX ERRORS
+  if(FAILED(hr))
+  {
+	if(errorBlob)
+	{
+	  // Print the exact line and compilation syntax failure directly to your log feed
+	  CLog::LogF(LOGERROR, "HLSL Compilation Error: %s", (char*) errorBlob->GetBufferPointer());
+	}
+	return false;
+  }
+
+  // 4. GENERATE THE COMPUTE SHADER INTERFACE OBJECT
+  hr = DX::DeviceResources::Get()->GetD3DDevice()->CreateComputeShader(
+	shaderBlob->GetBufferPointer(),
+	shaderBlob->GetBufferSize(),
+	nullptr,
+	&m_pPackShader // Out: Populates your target ComPtr<ID3D11ComputeShader> instance safely
+  );
+
+  if(FAILED(hr))
+  {
+	CLog::LogF(LOGERROR, "Failed to create hardware compute shader interface instance.");
+	return false;
+  }
+
+  CLog::LogF(LOGDEBUG, "Custom RGB to P010 Bit-Packing Compute Shader loaded successfully.");
+  return true;
+}
+
+bool CRendererPL::CreateSoftwareUploadTarget(unsigned int width, unsigned int height, bool dynamic, DXGI_FORMAT format, bool bUseUnordered)
+{
+  unsigned int w = width*2; //FFALIGN(width, 128);// align to 128 solved garbled output for 1792x1080
+  unsigned int h = height*2; //FFALIGN(height, 128);
+
+  if(m_SoftwareUploadTexture0.Get() && m_SoftwareUploadTexture0.GetWidth() == w && m_SoftwareUploadTexture0.GetHeight() == h)
+	return true;
+  
+  if(m_SoftwareUploadTexture.Get())
+	m_SoftwareUploadTexture.Release();
+
+  CLog::LogF(LOGDEBUG, "creating SoftwareUploadTexture {}x{} format {}.", w, h, DX::DXGIFormatToString(format));
+
+  CD3D11_TEXTURE2D_DESC textureDesc;
+  textureDesc.Width = w;
+  textureDesc.Height = h;
+  textureDesc.Format = DXGI_FORMAT_P010;
+  textureDesc.CPUAccessFlags = 0;
+  textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+  textureDesc.MipLevels = 1;
+  textureDesc.MiscFlags = 0;
+  textureDesc.ArraySize = 1;
+  textureDesc.Usage = D3D11_USAGE_DEFAULT;
+  textureDesc.SampleDesc.Count = 1;
+  textureDesc.SampleDesc.Quality = 0;
+  if(!m_SoftwareUploadTexture0.Create(textureDesc))
+  {
+	CLog::LogF(LOGERROR, "SoftwareUploadTexture creation failed.");
+	return false;
+  }
+  m_pTextureA_SRV.Reset();
+
+  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+  srvDesc.Format = DXGI_FORMAT_NV12;
+  srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+  srvDesc.Texture2D.MostDetailedMip = 0;
+  srvDesc.Texture2D.MipLevels = 1;
+
+  // m_pTextureA_Graphics is your libplacebo R10G10B10A2_UNORM output texture
+  //HRESULT hr = DX::DeviceResources::Get()->GetD3DDevice()->CreateShaderResourceView(m_SoftwareUploadTexture0.Get(), &srvDesc, &m_pTextureA_SRV );
+  //if(FAILED(hr))
+ // {
+	//CLog::LogF(LOGERROR, "Failed to create Texture A SRV.");
+	//return false;
+  //}
+
+  textureDesc.Width = w;
+  textureDesc.Height = h;
+  textureDesc.Format = DXGI_FORMAT_P010; //;DXGI_FORMAT_R8G8B8A8_UNORM
+  textureDesc.CPUAccessFlags = 0;
+  textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS;
+  textureDesc.MipLevels = 1;
+  textureDesc.MiscFlags = 0; //D3D11_RESOURCE_MISC_SHARED;
+  textureDesc.ArraySize = 1;
+  textureDesc.Usage = D3D11_USAGE_DEFAULT;
+  textureDesc.SampleDesc.Count = 1;
+  textureDesc.SampleDesc.Quality = 0;
+  if(!m_SoftwareUploadTexture.Create(textureDesc))
+  {
+	CLog::LogF(LOGERROR, "SoftwareUploadTexture creation failed.");
+	return false;
+  }
+
+  m_pPlane0_UAV.Reset();
+  m_pPlane1_UAV.Reset();
+
+  // 1. Cast your working D3D11 device handle to the updated Device3 interface layer
+  Microsoft::WRL::ComPtr<ID3D11Device3> pDevice3;
+  HRESULT hr = DX::DeviceResources::Get()->GetD3DDevice()->QueryInterface(__uuidof(ID3D11Device3), (void**) &pDevice3);
+
+  if(FAILED(hr))
+  {
+	CLog::LogF(LOGERROR, "Your Windows system environment does not support ID3D11Device3.");
+	return false;
+  }
+
+  // --- UAV COMPONENT SLOT 0: LUMA (Y) PLANE 0 ---
+  D3D11_UNORDERED_ACCESS_VIEW_DESC1 uavYDesc = {};
+  uavYDesc.Format = DXGI_FORMAT_R16_UINT; // Exposes Luma as a 16-bit single-channel integer view
+  uavYDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+  uavYDesc.Texture2D.MipSlice = 0;
+
+  // CRUCIAL: Targets Plane 0 (Luma) inside the base Array Slice 0 container
+  uavYDesc.Texture2D.PlaneSlice = 0;
+
+  hr = pDevice3->CreateUnorderedAccessView1(
+	m_SoftwareUploadTexture.Get(),
+	&uavYDesc,
+	&m_pPlane0_UAV
+  );
+  if(FAILED(hr)) return false;
+
+
+  // --- UAV COMPONENT SLOT 1: CHROMA (UV) PLANE 1 ---
+  D3D11_UNORDERED_ACCESS_VIEW_DESC1 uavUVDesc = {};
+  uavUVDesc.Format = DXGI_FORMAT_R16G16_UINT; // Exposes interleaved Chroma as a dual-channel 16-bit layout
+  uavUVDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+  uavUVDesc.Texture2D.MipSlice = 0;
+
+  // CRUCIAL: Targets Plane 1 (Chroma) inside the same base Array Slice 0 container!
+  uavUVDesc.Texture2D.PlaneSlice = 1;
+
+  hr = pDevice3->CreateUnorderedAccessView1(
+	m_SoftwareUploadTexture.Get(),
+	&uavUVDesc,
+	&m_pPlane1_UAV
+  );
+  if(FAILED(hr)) return false;
+
+  CLog::LogF(LOGDEBUG, "Multi-planar P010 subresource UAV pointers linked successfully.");
+
+#if 0
+  if(!m_SoftwareUploadTexture.Create(w, h, 1, dynamic ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT, format, nullptr, 0, bUseUnordered))   
+  {
+	CLog::LogF(LOGERROR, "SoftwareUploadTexture creation failed.");
+	return false;
+  }
+#endif
+  return true;
+}
+
 bool CRendererPL::CreateTempTarget(unsigned int width, unsigned int height, bool dynamic, DXGI_FORMAT format, bool bUseUnordered)
 {
-  // No format specified by renderer
-  if(format == DXGI_FORMAT_UNKNOWN)
-	format = DX::Windowing()->GetBackBuffer().GetFormat();
+  unsigned int w = FFALIGN(width, 128);
+  unsigned int h = FFALIGN(height, 128);
 
   // don't create new one if it exists with requested size and format
   if(m_TempTarget.Get() && m_TempTarget.GetFormat() == format &&
-	m_TempTarget.GetWidth() == width && m_TempTarget.GetHeight() == height &&
+	m_TempTarget.GetWidth() == w && m_TempTarget.GetHeight() == h &&
 	m_TempTarget.GetbUseUnordered() == bUseUnordered)
 	return true;
 
@@ -479,10 +728,10 @@ bool CRendererPL::CreateTempTarget(unsigned int width, unsigned int height, bool
 	m_TempTarget.Release();
   m_pTempTargetView.Reset();
 
-  CLog::LogF(LOGDEBUG, "creating temp target {}x{} format {}.", width, height,
+  CLog::LogF(LOGDEBUG, "creating temp target {}x{} format {}.", w, h,
 	DX::DXGIFormatToString(format));
 
-  if(!m_TempTarget.Create(width, height, 1,	dynamic ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT, format, nullptr, 0, bUseUnordered))
+  if(!m_TempTarget.Create(w, h, 1,	dynamic ? D3D11_USAGE_DYNAMIC : D3D11_USAGE_DEFAULT, format, nullptr, 0, bUseUnordered))
   {
 	CLog::LogF(LOGERROR, "Temp target creation failed.");
 	return false;
@@ -960,11 +1209,6 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	return;
   CRenderBufferImpl* buffer = static_cast<CRenderBufferImpl*>(buf);
 
-  if(!buf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
-  {
-	return;
-  }
-
   RECT srcRect = {sourceRect.x1, sourceRect.y1, sourceRect.x2, sourceRect.y2}; //cl 
   RECT destRect = {};
   if(m_bUseNvSuperResolution)
@@ -997,18 +1241,26 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 
   // Get the underlying D3D11 texture index from the DXVA video buffer
   unsigned arrayIdx;
-  hr = buf->GetResource(&pResource, &arrayIdx); //cl get buffer from decoder...
-  if(FAILED(hr))
+  if(buf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
   {
-	CLog::LogF(LOGERROR, "GetResource for arrayIdx failed");
-	return;
-  }
+	hr = buf->GetResource(&pResource, &arrayIdx); //cl get buffer from decoder...
+	if(FAILED(hr))
+	{
+	  CLog::LogF(LOGERROR, "GetResource for arrayIdx failed");
+	  return;
+	}
 
-  // Query for the ID3D11Texture2D interface from the resource
-  hr = pResource->QueryInterface(__uuidof(ID3D11Texture2D), (void**) &pTexture);
-  if(FAILED(hr))
+	// Query for the ID3D11Texture2D interface from the resource
+	hr = pResource->QueryInterface(__uuidof(ID3D11Texture2D), (void**) &pTexture);
+	if(FAILED(hr))
+	{
+	  CLog::LogF(LOGERROR, "Query for the ID3D11Texture2D interface failed");
+	}
+  }
+  else
   {
-	CLog::LogF(LOGERROR, "Query for the ID3D11Texture2D interface failed");
+	pTexture = m_SoftwareUploadTexture0.Get();
+	arrayIdx = 0;
   }
 
   if(m_RtxVideoProcessor.IsInitialized())
@@ -1022,53 +1274,50 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	// Update processor sizes if required
 	D3D11_TEXTURE2D_DESC srcDesc, destDesc;
 	pTexture->GetDesc(&srcDesc);
-	m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight);
+	m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_viewWidth, m_viewHeight);
 
-	// Create the video processor input view for the DXVA decoder output
+
+	RECT streamDestRect = destRect;
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamSourceRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &srcRect);
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
+	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamRotation(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, false, static_cast<D3D11_VIDEO_PROCESSOR_ROTATION>(0 / 90));
+	m_RtxVideoProcessor.ConfigureColorSpaces(buf, m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
+	m_RtxVideoProcessor.EnableNvidiaVideoSuperResolution(m_bUseNvSuperResolution);
+	m_RtxVideoProcessor.EnableNvidiaRtxVideoHdr(m_bUseNvRtxHdr);
+
+	// Create the video processor input view for the decoder output
 	D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inputViewDesc = {};
+	Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView>  pInputView;
+#if 1
 	inputViewDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D; // Explicitly map to a 2D Texture
 	inputViewDesc.Texture2D.ArraySlice = arrayIdx;           // Target the specific frame index
 	inputViewDesc.Texture2D.MipSlice = 0;
-	Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView>  pInputView;
 	hr = m_RtxVideoProcessor.m_pVideoDevice->CreateVideoProcessorInputView(pTexture.Get(), m_RtxVideoProcessor.m_pVideoEnumerator.Get(), &inputViewDesc, pInputView.GetAddressOf());
 	if(FAILED(hr))
 	{
 	  CLog::LogF(LOGERROR, "CreateVideoProcessorInputView failed");
 	  return;
 	}
+#else
+// Setting FourCC to 0 forces the runtime to read the format directly 
+// from the underlying resource token (DXGI_FORMAT_P010)
+	inputViewDesc.FourCC = 0;
+	inputViewDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+	inputViewDesc.Texture2D.MipSlice = 0;
+	inputViewDesc.Texture2D.ArraySlice = 0; // Targets base layer slice index
 
-	RECT streamDestRect = destRect;
+	// 3. EXECUTE THE HARDWARE ENGINE REGISTRATION PASS
+	// m_pVideoDevice is your working ID3D11VideoDevice handle instance.
+	// m_pVideoEnumerator is your active ID3D11VideoProcessorEnumerator handle instance.
+	HRESULT hr = m_RtxVideoProcessor.m_pVideoDevice->CreateVideoProcessorInputView(
+	  pTexture.Get(),        // The native P010 destination texture
+	  m_RtxVideoProcessor.m_pVideoEnumerator.Get(),      // The parent video capability enumerator matrix
+	  &inputViewDesc,                // The view layout descriptor properties
+	  &pInputView // Out: Populates your target ComPtr view handle safely
+	);
+#endif
 
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamSourceRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &srcRect);
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
-
-
-
-	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
-	bool isFullRange = buffer->full_range;
-	bool isBT601 = buffer->color_space == AVCOL_SPC_BT470BG || buffer->color_space == AVCOL_SPC_SMPTE170M;
-	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
-	inColorSpace.RGB_Range = isFullRange ? 0u : 1u;     // 0 = Full (0-255), 1 = Limited (16-235)
-	inColorSpace.YCbCr_Matrix = isBT601 ? 0u : 1u;      // 0 = BT.601, 1 = BT.709
-	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
-	inColorSpace.Nominal_Range = isFullRange ? 2u : 1u; // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0u,&inColorSpace);
-
-	D3D11_VIDEO_PROCESSOR_COLOR_SPACE outColorSpace = {};
-	outColorSpace.Usage = 0u;
-	outColorSpace.RGB_Range = 0u;
-	outColorSpace.YCbCr_Matrix = 1u;
-	outColorSpace.YCbCr_xvYCC = 1u;
-	outColorSpace.Nominal_Range = 2u;
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputColorSpace(m_RtxVideoProcessor.m_pVideoProcessor.Get(), &outColorSpace);
-
-	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamRotation(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, false, static_cast<D3D11_VIDEO_PROCESSOR_ROTATION>(0 / 90));
-
-	m_RtxVideoProcessor.ConfigureHdrColorSpaces(m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
-	m_RtxVideoProcessor.EnableNvidiaVideoSuperResolution(m_bUseNvSuperResolution);
-	m_RtxVideoProcessor.EnableNvidiaRtxVideoHdr(m_bUseNvRtxHdr);
-	
 	CLog::LogFC(LOGDEBUG, LOGPLACEBO, "srcRect: {}x{}, destRect: {}x{}", srcRect.right- srcRect.left + 1, srcRect.bottom - srcRect.top + 1, destRect.right - destRect.left + 1, destRect.bottom - destRect.top + 1);
 	bool blitSuccess = m_RtxVideoProcessor.ExecuteBlit(pInputView.Get(), buf, m_pTempTargetView.Get(), buffer->pictureFlags, flags, buf->frameIdx);
 	if(!blitSuccess)
@@ -1126,8 +1375,9 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
 	RenderDx(target, sourceRect, destPoints, flags, canSkip);
     #ifdef BYPASS_LIBPLACEBO
 	  // only works if temp target and intermediate texture have same format...
-	  m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_TempTarget.Get(), destPoints);
-	  sourceRect = dst; //cl Pass dst to next render stage...
+	  //m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_TempTarget.Get(), destPoints);
+	  m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_SoftwareUploadTexture0.Get(), destPoints);
+	sourceRect = dst; //cl Pass dst to next render stage...
 	  return;
     #endif
 	Render(target, sourceRect, destPoints, flags, renderPts);
@@ -1484,7 +1734,7 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
   pl_d3d11_wrap_params d3dparams =
   {
   .tex = target.Get(),
-  .array_slice = 1,
+  .array_slice = 0,
   .fmt = target.GetFormat(),
   .w = (int) target.GetWidth(),
   .h = (int) target.GetHeight()
@@ -1952,7 +2202,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
   {
 	if(!m_RtxVideoProcessor.IsInitialized())
 	{
-	  if(!m_RtxVideoProcessor.InitializePipeline(buf->GetWidth(), buf->GetHeight(), buf->pictureFlags, m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight))
+	  if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))
 	  {
 		CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
 	  }
@@ -2009,6 +2259,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	  m_RtxVideoProcessor.DisablePipeline();
 	  m_RtxVideoProcessor.FlushHistoryQueue();
 	  m_TempTarget.Release();
+	  m_SoftwareUploadTexture.Release();
 	  m_RtxVideoProcessor.UninitializePipeline();
 	  CRendererPL::OnRtxSettingChanged();
 	}
@@ -2021,7 +2272,6 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	if(m_RtxVideoProcessor.IsVsrViable())
 	{
 	  if(m_videoSettings.m_PlaceboNvSuperResolutionEnabled
-		&& buf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD
 		&& m_videoSettings.m_PlaceboFrameMixer == -1
 		&& m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 	  {
@@ -2032,7 +2282,6 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	{
 	  if(m_videoSettings.m_PlaceboNvRtxHdrEnabled
 		&& DX::DeviceResources::Get()->IsHDROutput1()  //cl 
-		&& buf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD
 		&& m_videoSettings.m_PlaceboFrameMixer == -1
 		&& m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 	  {
@@ -2061,14 +2310,16 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	}
 	m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
 
+	// Create temp target
 	bool bUseUnordered = !m_videoSettings.m_placeboOptions->getPlOptions()->params.skip_target_clearing ? true : false;
-	CreateTempTarget(m_RtxVideoProcessor.m_canvasWidth, m_RtxVideoProcessor.m_canvasHeight, false, TempTargetDxgiFormat, bUseUnordered);
+	CreateTempTarget(m_viewWidth, m_viewHeight, false, TempTargetDxgiFormat, false);
+	// works CreateSoftwareUploadTarget(buf->m_pictureWidth, buf->m_pictureHeight, false, DXGI_FORMAT_R8G8B8A8_UNORM, bUseUnordered);
+	CreateSoftwareUploadTarget(buf->m_pictureWidth, buf->m_pictureHeight, false, DXGI_FORMAT_AYUV, bUseUnordered);
   }
   else
   {
 	//cl clean up?
   }
-
 }
 
 bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
@@ -2079,12 +2330,12 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
   CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
   if(!buf->videoBuffer)
 	return false;
-
+  
   if (buf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
   {
 	if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
 	{
-	  // Wrap the output texture for libplacebo
+	  // Wrap the RTX pipeline output texture for libplacebo input
 	  pl_d3d11_wrap_params params = {};
 	  params.tex = m_TempTarget.Get();
 	  params.w = m_TempTarget.GetWidth();
@@ -2099,7 +2350,6 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 		return false;
 	  }
 
-	  // Populate libplacebo plane info for a standard interleaved RGB plane
 	  buf->plplanes [0].texture = buf->pltex [0];
 	  buf->plplanes [0].components = 3; // R, G, B channels
 	  buf->plplanes [0].component_mapping [0] = PL_CHANNEL_R;
@@ -2107,13 +2357,12 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  buf->plplanes [0].component_mapping [2] = PL_CHANNEL_B;
 	  buf->plplanes [0].component_mapping [3] = PL_CHANNEL_NONE;
 
-	  // Signal to the rest of Kodi/libplacebo that this image has exactly 1 RGB plane now
-      //if(buffer->plFormat.num_planes == -1)  //cl optimize
+	  //if(buffer->plFormat.num_planes == -1)  //cl optimize
 	  {
 		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, TempTargetDxgiFormat);
 	  }
-
 	  return buf->SetLoaded();
+
 	}
 	else
 	{
@@ -2122,13 +2371,140 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
   }
   else
   {
-	return buf->UploadPlanes();
+	// We need to upload the texture to GPU for blit, tried NV12 upload but ran into problems..., simply render with libplacebo for now
+	if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
+	{
+	  ID3D11DeviceContext* pDeviceContext = nullptr;
+	  DX::DeviceResources::Get()->GetD3DDevice()->GetImmediateContext(&pDeviceContext);
+
+	  static bool bInit = false;
+	  static pl_options placeboOptions = pl_options_alloc(NULL);  // Initialized to fast by defaults
+	  if(!bInit)
+	  {
+		bInit = true;
+		// Registers the cleanup function to run automatically at exit
+		std::atexit([]() { pl_options_free(&placeboOptions); });
+	  }
+
+	  // Upload to GPU
+	  buf->UploadPlanes();
+
+	  // Initialize frame IN and OUT
+	  pl_frame frameIn = {0};
+	  pl_frame frameOut = {0};
+	  pl_render_params params;
+	  InitializeFrameInFieldsMix(&frameIn, buf);
+	  frameIn.color.primaries = buf->m_ColorSpace.primaries;
+	  frameIn.color.transfer = buf->m_ColorSpace.transfer;
+	  CRendererPL::InitializeFrame(PL::PLInstance::Get()->GetSwapchain(), frameOut);
+	  frameOut.color.primaries = PL_COLOR_PRIM_BT_709;  
+	  frameOut.color.transfer = PL_COLOR_TRC_GAMMA24;
+	  frameOut.repr.levels = PL_COLOR_LEVELS_FULL;
+
+	  frameOut.repr.sys = PL_COLOR_SYSTEM_BT_709;
+      //frameOut.repr.bits.color_depth = 10;
+	  //frameOut.repr.bits.sample_depth = 16;
+	  //frameOut.repr.bits.bit_shift = 6;   // The mandatory P010 6-bit left shift!
+
+	  if(!m_SoftwareUploadTexture0.Get())
+	  {
+		return false;
+	  }
+
+	  D3D11_TEXTURE2D_DESC desc;
+	  m_SoftwareUploadTexture0.Get()->GetDesc(&desc);
+	  PL::pl_d3d_format format;
+	  pl_tex tex;
+	  PL::PLInstance::Get()->fill_d3d_format(&format, desc.Format);
+
+	  // Wrap the plane of the D3D11 texture
+	  frameOut.num_planes = format.num_planes;
+	  for(int i = 0; i < format.num_planes; i++)
+	  {
+		pl_d3d11_wrap_params params = {};
+		params.tex = m_SoftwareUploadTexture0.Get();
+		params.w = desc.Width / format.width_div [i];
+		params.h = desc.Height / format.height_div [i];
+		params.fmt = format.planes [i];
+		params.array_slice = 0;
+		tex = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params);
+
+		if(!tex)
+		  return false;
+		frameOut.planes [i].texture = tex;
+
+		//number of components per plane example uv is 2 in d3d the alpha is always a component but not with libplacebo
+		frameOut.planes [i].components = format.components [i];
+		//mapping yuv planes to rgba channels
+		for(int j = 0; j < 4; j++)
+		  frameOut.planes [i].component_mapping [j] = format.component_mapping [i][j];
+	  }
+
+
+	  frameIn.crop.x0 = 0;
+	  frameIn.crop.x1 = m_SoftwareUploadTexture0.GetWidth();
+	  frameIn.crop.y0 = 0;
+	  frameIn.crop.y1 = m_SoftwareUploadTexture0.GetHeight();
+	  frameOut.rotation = PL_ROTATION_0;
+
+	  // Convert image
+	  Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
+	  if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread)))) { pMultithread->Enter();}
+	  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, &placeboOptions->params);
+
+	  pDeviceContext->CSSetShader(m_pPackShader.Get(), nullptr, 0);
+	  pDeviceContext->CSSetShaderResources(0, 1, m_pTextureA_SRV.GetAddressOf());
+	  ID3D11UnorderedAccessView* uavArray [] = {m_pPlane0_UAV.Get(), m_pPlane1_UAV.Get()};
+	  pDeviceContext->CSSetUnorderedAccessViews(0, 2, uavArray, nullptr);
+
+	  // Dispatch thread grids to cover your 128-aligned dimensions
+	  pDeviceContext->Dispatch((buf->m_pictureWidth + 15) / 16, (buf->m_pictureHeight + 15) / 16, 1);
+
+	  // Unbind UAVs to free the resource container for the video processor
+	  ID3D11UnorderedAccessView* nullUAVs[2] = {nullptr, nullptr};
+	  pDeviceContext->CSSetUnorderedAccessViews(0, 2, nullUAVs, nullptr);
+
+
+	  if(pMultithread) { pMultithread->Leave(); }
+
+	  // Wrap the blit output texture
+	  pl_d3d11_wrap_params params2 = {};
+	  params2.tex = m_TempTarget.Get();
+	  params2.w = m_TempTarget.GetWidth();
+	  params2.h = m_TempTarget.GetHeight();
+	  params2.fmt = TempTargetDxgiFormat;
+	  params2.array_slice = 0;
+
+	  buf->pltex [0] = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params2);
+	  if(!buf->pltex [0])
+	  {
+		CLog::LogF(LOGERROR, "libplacebo failed to wrap the RTX HDR output texture.");
+		return false;
+	  }
+	  buf->plplanes [0].texture = buf->pltex [0];
+	  buf->plplanes [0].components = 3; // R, G, B channels
+	  buf->plplanes [0].component_mapping [0] = PL_CHANNEL_R;
+	  buf->plplanes [0].component_mapping [1] = PL_CHANNEL_G;
+	  buf->plplanes [0].component_mapping [2] = PL_CHANNEL_B;
+	  buf->plplanes [0].component_mapping [3] = PL_CHANNEL_NONE;
+
+	  //if(buffer->plFormat.num_planes == -1)  //cl optimize
+	  {
+		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, TempTargetDxgiFormat);
+	  }
+
+
+	  return buf->SetLoaded();
+	}
+	else
+	{
+	  return buf->UploadPlanes();
+	}
   }
 }
 
 bool CRendererPL::CRenderBufferImpl::UploadPlanes()
 {
-
   // source
   uint8_t* src[3];
   int srcStrides[3];
@@ -2280,9 +2656,9 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   pRootDevice->GetImmediateContext(&pImmediateContext);
 
   // Update internal tracker dimensions
-  m_currentInputWidth = width; //FFALIGN(width, 32);  //cl on first call, size is taken from picture, it can differ from allocated texture due to 16/32 aligment, just re-do it once later when we have the correct size instead of guessing
-  m_currentInputHeight = height; //FFALIGN(height, 32);
-  m_currentOutputWidth = m_viewWidth;  //cl?
+  m_currentInputWidth = width; 
+  m_currentInputHeight = height; 
+  m_currentOutputWidth = m_viewWidth; 
   m_currentOutputHeight = m_viewHeight;
 
   // Create the Enumerator
@@ -2306,8 +2682,6 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   if(FAILED(hr)) return false;
 
   // Check how many past and future reference frames the NVIDIA driver needs
-  //D3D11_VIDEO_PROCESSOR_CAPS processorCaps = {};
-  //m_pVideoEnumerator->GetVideoProcessorCaps(&processorCaps);
   D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS rateCaps = {};
   m_pVideoEnumerator->GetVideoProcessorRateConversionCaps(0, &rateCaps);
   m_numPastFrames = rateCaps.PastFrames;   
@@ -2389,9 +2763,6 @@ void CRTXVideoProcessor::DebugBypassToDisplay(CRect& srcRect, ID3D11Texture2D* p
   sourceBox.back = 1;
   
   pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x, destPoints [0].y, 0, pTempTarget, 0, &sourceBox);
-  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x+destDesc.Width- srcRect.Width(), destPoints [0].y+0, 0, pTempTarget, 0, &sourceBox);
-  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, destPoints[0].x+destDesc.Width - srcRect.Width(), destPoints [0].y+destDesc.Height- srcRect.Height(), 0, pTempTarget, 0, &sourceBox);
-  //pGraphicsContext->CopySubresourceRegion(pOutputWindowTexture, 0, 0, destPoints[0].x+destDesc.Height - srcRect.Height(), destPoints [0].y+0, pTempTarget, 0, &sourceBox);
 }
 
 bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx)
@@ -2438,6 +2809,10 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
   }
 
   int currentSize = m_historyQueue.size();
+  if(!currentSize)
+  {
+	return true;
+  }
 #if 0
   int actualCurrentFrameIndex = std::min(m_numPastFrames+1, currentSize) - 1; //Keep current frame as the last one received until future frames come in, There will be a couple of repeated frames on screen then...
 #else

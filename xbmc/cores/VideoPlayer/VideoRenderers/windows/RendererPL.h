@@ -82,7 +82,7 @@ public:
   void UninitializePipeline();
   bool ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx);
   void DebugBypassToDisplay(CRect& srcRect, ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4]);
-  bool ConfigureHdrColorSpaces(ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr);
+  bool ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr);
   bool EnsureProcessorSize(UINT inW, UINT inH, unsigned int iFlags, UINT outW, UINT outH);
   void FlushHistoryQueue();
   void EvaluateRtxCapability(const VideoPicture& picture);
@@ -95,8 +95,6 @@ public:
   bool IsStreamHdr() const { return m_bStreamIsHDR; }
   void EnableNvidiaVideoSuperResolution(bool bEnable);
   void EnableNvidiaRtxVideoHdr(bool bEnable);
-  const unsigned int m_canvasWidth = 3840;
-  const unsigned int m_canvasHeight = 2160;
   uint64_t m_lastFrameIdx = 0;
 
 private:
@@ -131,7 +129,9 @@ public:
   ~CRendererPL();
   void RenderStart(CRenderBuffer* rb);
   bool UploadBuffer(CRenderBuffer* buffer) override;
-
+  
+  bool InitializeComputeShader();
+  bool CreateSoftwareUploadTarget(unsigned int width, unsigned int height, bool dynamic = false, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN, bool bUseUnordered = false);
   bool CreateTempTarget(unsigned int width, unsigned int height, bool dynamic = false, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN, bool bUseUnordered = false);
   void UpdateVideoFilters() override;
   bool NeedBuffer(int idx) override;
@@ -185,7 +185,16 @@ protected:
   void RenderMixExec(CRenderBufferImpl* buffer, double renderPts, CVideoSettings& videoSettings, CRect& sourceRect, CRect& dst, pl_frame frameOut, ID3D11DeviceContext* pDeviceContext);
 
 private:
-  // Color space info
+  CD3DTexture m_TempTarget;
+  Microsoft::WRL::ComPtr < ID3D11VideoProcessorOutputView> m_pTempTargetView;
+  CD3DTexture m_SoftwareUploadTexture;
+  CD3DTexture m_SoftwareUploadTexture0;
+  Microsoft::WRL::ComPtr<ID3D11ComputeShader> m_pPackShader;
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>  m_pTextureA_SRV;  // Reads Texture A (RGB)
+  Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView1> m_pPlane0_UAV;   // Writes Texture B Plane 0 (Y)
+  Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView1> m_pPlane1_UAV;   // Writes Texture B Plane 1 (UV)
+  Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView> m_pVideoProcessorInputViewP010;
+  
   static inline bool m_bHdrIn;
   static inline bool m_bHdrOut;
   pl_color_space m_colorSpace;
