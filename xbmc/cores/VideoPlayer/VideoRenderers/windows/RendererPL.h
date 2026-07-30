@@ -130,9 +130,8 @@ public:
   void RenderStart(CRenderBuffer* rb);
   bool UploadBuffer(CRenderBuffer* buffer) override;
   
-  bool InitializeComputeShader();
-  bool CreateSoftwareUploadTarget(unsigned int width, unsigned int height, bool dynamic = false, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN, bool bUseUnordered = false);
-  bool CreateTempTarget(unsigned int width, unsigned int height, bool dynamic = false, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN, bool bUseUnordered = false);
+  bool CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height);
+  bool CreateTempTarget(unsigned int width, unsigned int height);
   void UpdateVideoFilters() override;
   bool NeedBuffer(int idx) override;
   CRenderInfo GetRenderInfo() override;
@@ -188,12 +187,6 @@ private:
   CD3DTexture m_TempTarget;
   Microsoft::WRL::ComPtr < ID3D11VideoProcessorOutputView> m_pTempTargetView;
   CD3DTexture m_SoftwareUploadTexture;
-  CD3DTexture m_SoftwareUploadTexture0;
-  Microsoft::WRL::ComPtr<ID3D11ComputeShader> m_pPackShader;
-  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>  m_pTextureA_SRV;  // Reads Texture A (RGB)
-  Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView1> m_pPlane0_UAV;   // Writes Texture B Plane 0 (Y)
-  Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView1> m_pPlane1_UAV;   // Writes Texture B Plane 1 (UV)
-  Microsoft::WRL::ComPtr<ID3D11VideoProcessorInputView> m_pVideoProcessorInputViewP010;
   
   static inline bool m_bHdrIn;
   static inline bool m_bHdrOut;
