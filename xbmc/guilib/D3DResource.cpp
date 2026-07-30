@@ -179,6 +179,42 @@ CD3DTexture::~CD3DTexture()
   delete[] m_data;
 }
 
+bool CD3DTexture::Create(CD3D11_TEXTURE2D_DESC& textureDesc)
+{
+  m_width = textureDesc.Width;
+  m_height = textureDesc.Height;
+  m_mipLevels = textureDesc.MipLevels;
+
+  // create the texture
+  Release();
+
+  if(!DX::Windowing()->IsFormatSupport(textureDesc.Format, D3D11_FORMAT_SUPPORT_TEXTURE2D))
+  {
+	CLog::LogF(LOGERROR, "unsupported texture format {}", DX::DXGIFormatToString(textureDesc.Format));
+	return false;
+  }
+
+  m_cpuFlags = textureDesc.CPUAccessFlags;
+  m_format = textureDesc.Format;
+  m_usage = textureDesc.Usage;
+  m_bindFlags = textureDesc.BindFlags;
+
+  ComPtr<ID3D11Device> pD3DDevice = DX::DeviceResources::Get()->GetD3DDevice();
+  ComPtr<ID3D11DeviceContext> pD3D11Context = DX::DeviceResources::Get()->GetD3DContext();
+  HRESULT hr = pD3DDevice->CreateTexture2D(&textureDesc, nullptr, m_texture.ReleaseAndGetAddressOf());
+
+  if(FAILED(hr))
+  {
+	CLog::LogF(LOGERROR, "failed to create texture.");
+	return false;
+  }
+
+  Register();
+
+  return true;
+}
+
+
 bool CD3DTexture::Create(UINT width, UINT height, UINT mipLevels, D3D11_USAGE usage, DXGI_FORMAT format, const void* pixels /* nullptr */, unsigned int srcPitch /* 0 */, bool bUseUnordered /* false */)
 {
   m_width = width;
