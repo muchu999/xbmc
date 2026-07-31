@@ -1108,7 +1108,7 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	arrayIdx = 0;
   }
 
-  if(m_RtxVideoProcessor.IsInitialized())
+  if(m_RtxVideoProcessor.IsInitialized() && pTexture)
   {
 	Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
 	if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread))))
@@ -2227,10 +2227,13 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  //frameOut.color.primaries = PL_COLOR_PRIM_BT_709;  
 	  //frameOut.color.transfer = PL_COLOR_TRC_BT_1886;
 	  //frameOut.repr.levels = PL_COLOR_LEVELS_LIMITED;
-	  frameOut.repr.sys = PL_COLOR_SYSTEM_BT_709;
       //frameOut.repr.bits.color_depth = 10;
 	  //frameOut.repr.bits.sample_depth = 16;
 	  //frameOut.repr.bits.bit_shift = 6;   // The mandatory P010 6-bit left shift!
+	  frameOut.color.primaries = buf->m_ColorSpace.primaries;
+	  frameOut.color.transfer = buf->m_ColorSpace.transfer;
+	  frameOut.repr.sys = frameIn.repr.sys;
+	  frameOut.repr.levels = frameIn.repr.levels;
 
 	  if(!m_SoftwareUploadTexture.Get())
 	  {
@@ -2656,7 +2659,7 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 
   if(FAILED(hr))
   {
-	CLog::LogF(LOGERROR, "RTX Processor: VideoProcessorBlt failed! HRESULT = 0x%08X", hr);
+	CLog::LogF(LOGERROR, "RTX Processor: VideoProcessorBlt failed! HRESULT = {}", hr);
 
 	// If the GPU crashed or was removed, we must flag the pipeline to prevent spamming errors
 	if(hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
