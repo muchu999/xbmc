@@ -162,7 +162,7 @@ protected:
   void DeleteRenderBuffer(int index);
 
   
-  virtual void RenderStart(CRenderBuffer* rb) {};
+  virtual void RenderStart(CRenderBuffer* rb, const CRect& sourceRect, const CRect& destRect) {};
   virtual void ProcessHDR(CRenderBuffer* rb);
   /*!
    * \brief Call before rendering begins to find out if rendering will be attempted as SDR or HDR.

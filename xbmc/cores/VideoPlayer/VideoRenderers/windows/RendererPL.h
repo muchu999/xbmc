@@ -127,7 +127,7 @@ class CRendererPL : public CRendererBase
 public:
   class CRenderBufferImpl;
   ~CRendererPL();
-  void RenderStart(CRenderBuffer* rb);
+  void RenderStart(CRenderBuffer* rb, const CRect& sourceRect, const CRect& destRect);
   bool UploadBuffer(CRenderBuffer* buffer) override;
   
   bool CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height);
@@ -236,7 +236,8 @@ private:
   int m_currentWriteSlot = 0;
   int m_presentWriteSlot = 0;
   void InitProfiling();
-  //ID3D11Texture2D* m_pOutputHdrTexture = nullptr;
+  void ReleaseProfilingQueries();
+	//ID3D11Texture2D* m_pOutputHdrTexture = nullptr;
 
   CRTXVideoProcessor m_RtxVideoProcessor;
   bool m_bUseNvRtxHdr = false;

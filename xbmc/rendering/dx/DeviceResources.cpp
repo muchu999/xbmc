@@ -120,6 +120,7 @@ void DX::DeviceResources::Release()
     return;
 
   StopPresentThread();
+  ReleaseProfilingQueries();
   ReleaseBackBuffer();
   OnDeviceLost(true);
   DestroySwapChain();
@@ -2563,9 +2564,21 @@ void DX::DeviceResources::ReleaseProfilingQueries()
 {
   for(int i = 0; i < PRESENT_QUERY_LATENCY; ++i)
   {
-	m_presentQueryRing [i].disjoint = nullptr; 
-	m_presentQueryRing [i].start = nullptr;
-	m_presentQueryRing [i].end = nullptr;
+	if(m_presentQueryRing [i].disjoint)
+	{
+	  m_presentQueryRing [i].disjoint->Release();
+	  m_presentQueryRing [i].disjoint = nullptr;
+	}
+	if(m_presentQueryRing [i].start)
+	{
+	  m_presentQueryRing [i].start->Release();
+	  m_presentQueryRing [i].start = nullptr;
+	}
+	if(m_presentQueryRing [i].end)
+	{
+	  m_presentQueryRing [i].end->Release();
+	  m_presentQueryRing [i].end = nullptr;
+	}
 	m_presentQueryRing [i].is_active = false;
   }
 

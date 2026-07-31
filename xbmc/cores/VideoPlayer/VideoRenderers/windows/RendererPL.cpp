@@ -66,6 +66,8 @@ CRendererPL::~CRendererPL()
 
   //cl Force restore default color space on exit, non-hdr content messes up hdr color space
   DX::DeviceResources::Get()->SetHdrColorSpace();  // Windowing class instead?
+
+  ReleaseProfilingQueries();
 }
 
 
@@ -1055,11 +1057,7 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
   CRenderBufferImpl* buffer = static_cast<CRenderBufferImpl*>(buf);
 
   RECT srcRect = {sourceRect.x1, sourceRect.y1, sourceRect.x2, sourceRect.y2}; //cl 
-  RECT destRect = {};
-  if(m_bUseNvSuperResolution)
-	destRect = {0, 0, static_cast<LONG>(target.GetWidth()), static_cast<LONG>(target.GetHeight())};
-  else
-	destRect = srcRect;
+  RECT destRect = {0, 0, static_cast<LONG>(m_TempTarget.GetWidth()), static_cast<LONG>(m_TempTarget.GetHeight())};
 
   //cl Don't re-render repeat frames
   D3D11_VIDEO_FRAME_FORMAT fieldFFormat = buf->pictureFlags & DVP_FLAG_INTERLACED ? buf->pictureFlags & DVP_FLAG_TOP_FIELD_FIRST ? D3D11_VIDEO_FRAME_FORMAT_INTERLACED_TOP_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_INTERLACED_BOTTOM_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
@@ -1119,7 +1117,8 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	// Update processor sizes if required
 	D3D11_TEXTURE2D_DESC srcDesc, destDesc;
 	pTexture->GetDesc(&srcDesc);
-	m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_viewWidth, m_viewHeight);
+	//m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_viewWidth, m_viewHeight);
+	m_RtxVideoProcessor.EnsureProcessorSize(srcRect.right- srcRect.left, srcRect.bottom - srcRect.top, buffer->pictureFlags, destRect.right - destRect.left, destRect.bottom - destRect.top);
 
 
 	RECT streamDestRect = destRect;
@@ -1628,6 +1627,7 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
 	FrameQuery& frame = m_queryRing [m_currentWriteSlot]; //cl just choose one ?
 	if(!frame.disjoint || !frame.start || !frame.end)
 	{
+	  ReleaseProfilingQueries();
 	  InitProfiling();
 	}
   }
@@ -2018,7 +2018,7 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
   }
 }
 
-void CRendererPL::RenderStart(CRenderBuffer* buffer)
+void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, const CRect& destRect)
 {
   CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
   if(!buf || !buf->videoBuffer)
@@ -2028,25 +2028,28 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
   {
 	if(!m_RtxVideoProcessor.IsInitialized())
 	{
-	  if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))
+	  if(m_viewWidth&&m_viewHeight)
 	  {
-		CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
-	  }
-	  else
-	  {
-		if(buf->IsLoaded())
+		if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))  // wrong size, will be re-created...
 		{
-		  if(buf->pltex [0])
-		  {
-			for(int i = 0; i < buf->plFormat.num_planes; i++)
-			{
-			  pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-			}
-		  }
-		  buffer->ResetLoaded ();
+		  CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
 		}
-		m_RtxVideoProcessor.EnablePipeline();
-		CRendererPL::OnRtxSettingChanged();
+		else
+		{
+		  if(buf->IsLoaded())
+		  {
+			if(buf->pltex [0])
+			{
+			  for(int i = 0; i < buf->plFormat.num_planes; i++)
+			  {
+				pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
+			  }
+			}
+			buffer->ResetLoaded ();
+		  }
+		  m_RtxVideoProcessor.EnablePipeline();
+		  CRendererPL::OnRtxSettingChanged();
+		}
 	  }
 	}
 	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
@@ -2137,7 +2140,17 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer)
 	m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
 
 	// Create temp target
-	CreateTempTarget(m_viewWidth, m_viewHeight);
+	if(m_bUseNvSuperResolution)
+	{
+	  if((sourceRect.Width() <= destRect.Width()) && (sourceRect.Height() <= destRect.Height()))
+	    CreateTempTarget(destRect.Width(), destRect.Height());
+	  else
+		CreateTempTarget(sourceRect.Width(), sourceRect.Height());
+	}
+	else
+	{
+	  CreateTempTarget(sourceRect.Width(), sourceRect.Height());
+	}
 	CreateSoftwareUploadTarget(buf, buf->m_pictureWidth, buf->m_pictureHeight);
   }
   else
@@ -2406,6 +2419,32 @@ bool CRendererPL::CRenderBufferImpl::HasHdrData()
   return (hasHDR10PlusMetadata || hasDoviMetadata || hasDoviRpuMetadata);
 }
 
+void CRendererPL::ReleaseProfilingQueries()
+{
+  for(int i = 0; i < QUERY_LATENCY; ++i)
+  {
+	if(m_queryRing [i].disjoint)
+	{
+	  m_queryRing [i].disjoint->Release();
+	  m_queryRing [i].disjoint = nullptr;
+	}
+	if(m_queryRing [i].start)
+	{
+	  m_queryRing [i].start->Release();
+	  m_queryRing [i].start = nullptr;
+	}
+	if(m_queryRing [i].end)
+	{
+	  m_queryRing [i].end->Release();
+	  m_queryRing [i].end = nullptr;
+	}
+	m_queryRing [i].is_active = false;
+  }
+
+  m_currentWriteSlot = 0;
+}
+
+
 void CRendererPL::InitProfiling() {
   pl_d3d11 d3d11 = PL::PLInstance::Get()->GetD3d11();
 
@@ -2457,11 +2496,13 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
 {
   // Get D3D device
   ID3D11Device* pRootDevice = DX::DeviceResources::Get()->GetD3DDevice();
-  if(!pRootDevice) return false;
+  if(!pRootDevice) 
+	return false;
 
   // Get video Device
   HRESULT hr = pRootDevice->QueryInterface(__uuidof(ID3D11VideoDevice), reinterpret_cast<void**>(m_pVideoDevice.GetAddressOf()));
-  if(FAILED(hr)) return false;
+  if(FAILED(hr)) 
+	return false;
 
   // Get Immediate context, had problem getting it from DX::DeviceResources
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> pImmediateContext;
@@ -2487,11 +2528,13 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
   ID3D11VideoProcessorEnumerator* pVideoProcessorEnumerator = nullptr;
   hr = m_pVideoDevice->CreateVideoProcessorEnumerator(&desc, m_pVideoEnumerator.GetAddressOf());
-  if(FAILED(hr)) return false;
+  if(FAILED(hr)) 
+	return false;
 
   // Get video context
   hr = pImmediateContext->QueryInterface(__uuidof(ID3D11VideoContext), reinterpret_cast<void**>(m_pVideoContext.GetAddressOf()));
-  if(FAILED(hr)) return false;
+  if(FAILED(hr)) 
+	return false;
 
   // Check how many past and future reference frames the NVIDIA driver needs
   D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS rateCaps = {};
@@ -2543,6 +2586,7 @@ void CRTXVideoProcessor::FlushHistoryQueue()
 
 	  CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(entry.pBuffer);
 	  pBuf->m_NeedFrame = false;
+	  m_historyQueue.front().inputView.Reset();
 	  m_historyQueue.pop_front();
 	}
 	CLog::LogF(LOGDEBUG, "RTX Video Processor: Flushed deinterlacing history queue due to seek/skip.");
@@ -2616,7 +2660,8 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	  // Evict oldest frame
 	  CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(m_historyQueue.front().pBuffer);
 	  pBuf->m_NeedFrame = false;
-	  m_historyQueue.pop_front(); 
+	  m_historyQueue.front().inputView.Reset();
+	  m_historyQueue.pop_front();
 	}
   }
 
