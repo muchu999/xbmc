@@ -2214,6 +2214,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  ID3D11DeviceContext* pDeviceContext = nullptr;
 	  DX::DeviceResources::Get()->GetD3DDevice()->GetImmediateContext(&pDeviceContext);
 
+	  // Init libplacebo render params for "decoded frame to uploaded frame" conversion
 	  static bool bInit = false;
 	  static pl_options placeboOptions = pl_options_alloc(NULL);  // Initialized to fast by defaults
 	  if(!bInit)
@@ -2223,10 +2224,15 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 		std::atexit([]() { pl_options_free(&placeboOptions); });
 	  }
 
-	  // Upload to GPU
+	  if(!m_SoftwareUploadTexture.Get())
+	  {
+		return false;
+	  }
+
+	  // Upload planes to GPU
 	  buf->UploadPlanes();
 
-	  // Initialize frame IN and OUT
+	  // Initialize frame IN and OUT for conversion
 	  pl_frame frameIn = {0};
 	  pl_frame frameOut = {0};
 	  pl_render_params params;
@@ -2248,18 +2254,14 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  frameOut.repr.sys = frameIn.repr.sys;
 	  frameOut.repr.levels = frameIn.repr.levels;
 
-	  if(!m_SoftwareUploadTexture.Get())
-	  {
-		return false;
-	  }
-
+	  // Get format of output m_SoftwareUploadTexture
 	  D3D11_TEXTURE2D_DESC desc;
 	  m_SoftwareUploadTexture.Get()->GetDesc(&desc);
 	  PL::pl_d3d_format format;
 	  pl_tex tex;
 	  PL::PLInstance::Get()->fill_d3d_format(&format, desc.Format);
 
-	  // Wrap the plane of the D3D11 texture
+	  // Wrap the planes of m_SoftwareUploadTexture
 	  frameOut.num_planes = format.num_planes;
 	  for(int i = 0; i < format.num_planes; i++)
 	  {
@@ -2280,6 +2282,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 		  frameOut.planes [i].component_mapping [j] = format.component_mapping [i][j];
 	  }
 
+	  // Crop input to texture size
 	  frameIn.crop.x0 = 0;
 	  frameIn.crop.x1 = m_SoftwareUploadTexture.GetWidth();
 	  frameIn.crop.y0 = 0;
@@ -2291,6 +2294,19 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread)))) { pMultithread->Enter();}
 	  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, &placeboOptions->params);
 	  if(pMultithread) { pMultithread->Leave(); }
+
+	  // Destroy placebo input picture wraps
+	  int nPlanes = av_pix_fmt_count_planes(buf->videoBuffer->GetFormat());
+	  for(int i = 0; i < nPlanes; i++)
+	  {
+		pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
+	  }
+
+	  // Destroy placebo m_SoftwareUploadTexture wraps, no need for it since frame mixing not supported
+	  for(int i = 0; i < format.num_planes; i++)
+	  {
+		pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &frameOut.planes [i].texture);
+	  }
 
 	  // Wrap the blit output texture
 	  pl_d3d11_wrap_params params2 = {};
@@ -2313,6 +2329,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  buf->plplanes [0].component_mapping [2] = PL_CHANNEL_B;
 	  buf->plplanes [0].component_mapping [3] = PL_CHANNEL_NONE;
 
+	  // Fill format for new input to libplacebo (m_TempTarget)
 	  //if(buffer->plFormat.num_planes == -1)  //cl optimize
 	  {
 		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, TempTargetDxgiFormat);
@@ -2358,7 +2375,7 @@ bool CRendererPL::CRenderBufferImpl::UploadPlanes()
 
 	}
   }
-  plFormat.num_planes = 3;
+  plFormat.num_planes = 3; //cl ? 
   m_bLoaded = true;
   return m_bLoaded;
 }
