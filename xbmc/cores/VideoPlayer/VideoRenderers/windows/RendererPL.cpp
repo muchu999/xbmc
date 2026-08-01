@@ -2375,7 +2375,7 @@ bool CRendererPL::CRenderBufferImpl::UploadPlanes()
 
 	}
   }
-  plFormat.num_planes = 3; //cl ? 
+  plFormat.num_planes = av_pix_fmt_count_planes(buffer_format); //cl cleanup? get the right number of plaenes for eventual pl_destroy
   m_bLoaded = true;
   return m_bLoaded;
 }
