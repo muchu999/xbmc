@@ -397,11 +397,14 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
   CreateFactory();
 
   UINT creationFlags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+//#define D3D11_DEBUG 1 //cl 
 #if defined(_DEBUG)
   if(DX::SdkLayersAvailable())
   {
+    #ifdef D3D11_DEBUG
 	// If the project is in a debug build, enable debugging via SDK Layers with this flag.
-	//creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+	creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+	#endif
   }
 #endif
 
@@ -478,7 +481,8 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
   // Check shared textures support
   CheckNV12SharedTexturesSupport(); //cl 
 
-#if 0 //def _DEBUG  //cl 
+#ifdef _DEBUG  //cl 
+#ifdef D3D11_DEBUG
   if(SUCCEEDED(m_d3dDevice.As(&m_d3dDebug)))
   {
 	ComPtr<ID3D11InfoQueue> d3dInfoQueue;
@@ -497,6 +501,7 @@ void DX::DeviceResources::CreateDecoderDeviceResources()
 	  d3dInfoQueue->AddStorageFilterEntries(&filter);
 	}
   }
+#endif
 #endif
 
   hr = context.As(&m_d3dContextDecoder); CHECK_ERR();
@@ -536,8 +541,10 @@ void DX::DeviceResources::CreateDeviceResources()
 #if defined(_DEBUG)
   if (DX::SdkLayersAvailable())
   {
-    // If the project is in a debug build, enable debugging via SDK Layers with this flag.
-    //creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+    #ifdef D3D11_DEBUG
+	// If the project is in a debug build, enable debugging via SDK Layers with this flag.
+    creationFlags |= D3D11_CREATE_DEVICE_DEBUG; //cl disabled because of dx11 debug layer bug with multithreaded presentation causing frequent crashes and corrupting D3D11 leading to crash even in previously working versions
+    #endif
   }
 #endif
 
@@ -618,7 +625,8 @@ void DX::DeviceResources::CreateDeviceResources()
   // Check shared textures support
   CheckNV12SharedTexturesSupport();
 
-#if 0 //def _DEBUG //cl 
+#ifdef _DEBUG //cl 
+  #ifdef D3D11_DEBUG
   if (SUCCEEDED(m_d3dDevice.As(&m_d3dDebug)))
   {
     ComPtr<ID3D11InfoQueue> d3dInfoQueue;
@@ -635,9 +643,10 @@ void DX::DeviceResources::CreateDeviceResources()
       filter.DenyList.NumIDs = hide.size();
       filter.DenyList.pIDList = hide.data();
       d3dInfoQueue->AddStorageFilterEntries(&filter);
-	  d3dInfoQueue->SetMuteDebugOutput(TRUE); //cl 
+	  d3dInfoQueue->SetMuteDebugOutput(FALSE); //cl 
     }
   }
+  #endif
 #endif
 
   hr = context.As(&m_d3dContext); CHECK_ERR();
