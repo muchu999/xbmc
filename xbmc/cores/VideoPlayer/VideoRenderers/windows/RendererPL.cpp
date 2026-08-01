@@ -474,6 +474,38 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
   renderTimeMonitor.calculateAll(meanv, varv, minv, maxv);
   info.render8 = StringUtils::Format("Render time (P) Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev:{:0>5.2f}", minv * 1000.0, maxv * 1000.0, meanv * 1000.0, std::sqrt(varv) * 1000.0);
 
+  const AVPixFmtDescriptor* fmtdesc = av_pix_fmt_desc_get(plbuffer->videoBuffer->GetFormat());
+
+  int srcW = 0;
+  int srcH = 0;
+  std::string srcName = "";
+  if(fmtdesc)
+  {
+	srcW = plbuffer->GetWidth();
+	srcH = plbuffer->GetHeight();
+	srcName = fmtdesc->name;
+  }
+  int softW = 0;
+  int softH = 0;
+  std::string softName = "";
+  if(m_SoftwareUploadTexture.Get() && plbuffer->videoBuffer->GetFormat() != AV_PIX_FMT_D3D11VA_VLD)
+  {
+	softW = m_SoftwareUploadTexture.GetWidth();
+	softH = m_SoftwareUploadTexture.GetHeight();
+	softName = DX::DXGIFormatToShortString(m_SoftwareUploadTexture.GetFormat());
+  }
+  int tempW = 0;
+  int tempH = 0;
+  std::string tempName = "";
+  if(m_TempTarget.Get())
+  {
+	tempW = m_TempTarget.GetWidth();
+	tempH = m_TempTarget.GetHeight();
+	tempName = DX::DXGIFormatToShortString(m_TempTarget.GetFormat());
+  }
+
+  info.render9 = StringUtils::Format("RTX pipeline:{}, SR:{}, HDR:{}, source: {}x{}({}), swUpload: {}x{}({}), bltOut: {}x{}({})", m_RtxVideoProcessor.IsRtxPipelineEnabled()?"on":"off", m_bUseNvSuperResolution?"on":"off", m_bUseNvRtxHdr?"on":"off", srcW, srcH, srcName, softW, softH, softName, tempW, tempH, tempName);
+
   info.shader = "-"; 
   if (plbuffer->hasHDR10PlusMetadata)
   {
@@ -2357,7 +2389,6 @@ bool CRendererPL::CRenderBufferImpl::UploadPlanes()
 
   int out_map[4];
 
-  const AVPixFmtDescriptor* fmtdesc = av_pix_fmt_desc_get(buffer_format);
   videoBuffer->GetPlanes(src);
   videoBuffer->GetStrides(srcStrides);
   pl_plane_data pdata[4] = { };

@@ -1343,6 +1343,7 @@ void DX::DeviceResources::HandleDeviceLost(bool removed)
                                                "ReloadSkin");
 }
 
+CPLHelper::CMonitor m_SignalFrameReadyMonitor(120);
 CPLHelper::CMonitor m_guiComposeTimeMonitor(120);
 
 bool DX::DeviceResources::Begin()
@@ -2134,8 +2135,10 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo()
   uint64_t cadenceDropCount = m_JudderCadenceDrop.load(std::memory_order_relaxed);
 
   double meanv, varv, minv, maxv;;
+  double meanv2, varv2, minv2, maxv2;;
   m_queueDepthTracker.calculateAll(meanv, varv, minv, maxv);
-  info.judder = StringUtils::Format("Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", minv, maxv, meanv, cadenceDropCount);
+  m_SignalFrameReadyMonitor.calculateAll(meanv2, varv2, minv2, maxv2);
+  info.judder = StringUtils::Format("Main Loop time: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}, Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", minv2 * 1000.0, maxv2 * 1000.0, meanv2 * 1000.0, std::sqrt(varv) * 1000.0, minv, maxv, meanv, cadenceDropCount);
 
   m_guiComposeTimeMonitor.calculateAll(meanv, varv, minv, maxv);
   info.guiComposeTime = StringUtils::Format("Render time (G) Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv*1000.0, maxv*1000.0, meanv*1000.0, std::sqrt(varv) * 1000.0);
@@ -2514,6 +2517,8 @@ HRESULT DX::DeviceResources::SignalFrameReady()
 	m_JudderCadenceDrop.fetch_add(1, std::memory_order_relaxed);
   }
 
+  int64_t endTime = CurrentHostCounter();
+
   m_renderCv.wait(lock, [this, maxAllowedQueueDepth] {
 	size_t rendered = m_framesRendered.load(std::memory_order_seq_cst);
 	size_t presented = m_framesPresented.load(std::memory_order_seq_cst);
@@ -2523,6 +2528,12 @@ HRESULT DX::DeviceResources::SignalFrameReady()
 
 	return (rendered <= presented + maxAllowedQueueDepth);
 	});
+
+  static int64_t prevStart = 0;
+  int64_t startTime = CurrentHostCounter();
+  float duration = (endTime - prevStart) / (float) CurrentHostFrequency();
+  m_SignalFrameReadyMonitor.update(duration);
+  prevStart = startTime;
 
   if(!m_presentRunning.load(std::memory_order_acquire))
   {

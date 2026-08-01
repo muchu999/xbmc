@@ -124,7 +124,11 @@ namespace DX
         return "FP16";
       case DXGI_FORMAT_R32G32B32A32_FLOAT:
         return "FP32";
-      default:
+	  case DXGI_FORMAT_P010:
+		return "P010";
+	  case DXGI_FORMAT_NV12:
+		return "NV12";
+	  default:
         return "unknown";
     }
   }
