@@ -2591,8 +2591,13 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   // Check how many past and future reference frames the NVIDIA driver needs
   D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS rateCaps = {};
   m_pVideoEnumerator->GetVideoProcessorRateConversionCaps(0, &rateCaps);
-  m_numPastFrames = rateCaps.PastFrames;   
-  m_numFutureFrames = rateCaps.FutureFrames;
+  m_numPastFrames = 0;
+  m_numFutureFrames = 0;
+  if(desc.InputFrameFormat != D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE)
+  {
+	m_numPastFrames = rateCaps.PastFrames;
+	m_numFutureFrames = rateCaps.FutureFrames;
+  }
 
   // Create/configure the Video Processor
   hr = m_pVideoDevice->CreateVideoProcessor(m_pVideoEnumerator.Get(), 0, m_pVideoProcessor.GetAddressOf());
@@ -2687,15 +2692,17 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	return false;
   }
 
-  if(std::abs(int(frameIdx) - int(m_lastFrameIdx)) > 2)
+  // flush queue in case of discontinuous frames
+  D3D11_VIDEO_FRAME_FORMAT fieldFFormat = pictFlags & DVP_FLAG_INTERLACED ? pictFlags & DVP_FLAG_TOP_FIELD_FIRST ? D3D11_VIDEO_FRAME_FORMAT_INTERLACED_TOP_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_INTERLACED_BOTTOM_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+  bool bIsInterlaced = !(fieldFFormat == D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+  int maxStepSize = bIsInterlaced ? 4 : 2;
+  if(std::abs(int(frameIdx) - int(m_lastFrameIdx)) > maxStepSize)
   {
 	FlushHistoryQueue();
   }
   m_lastFrameIdx = frameIdx;
 
   // Interlacing params
-  D3D11_VIDEO_FRAME_FORMAT fieldFFormat = pictFlags & DVP_FLAG_INTERLACED ? pictFlags & DVP_FLAG_TOP_FIELD_FIRST ? D3D11_VIDEO_FRAME_FORMAT_INTERLACED_TOP_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_INTERLACED_BOTTOM_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
-  bool bIsInterlaced = !(fieldFFormat == D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
   int fieldIndex = !bIsInterlaced ? 0 : (flags & RENDER_FLAG_FIELD0) ? 0 : 1;
   unsigned int streamFrameIndex = bIsInterlaced ? frameIdx + fieldIndex : frameIdx / 2; //cl
 
