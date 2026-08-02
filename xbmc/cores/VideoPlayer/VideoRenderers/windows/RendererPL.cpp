@@ -2022,15 +2022,15 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
 
 void CRendererPL::CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution)
 {
-  m_bUseNvRtxHdr = false;
-  m_bUseNvSuperResolution = false;
+  bUseNvRtxHdr = false;
+  bUseNvSuperResolution = false;
   if(m_RtxVideoProcessor.IsVsrViable())
   {
 	if(m_videoSettings.m_PlaceboNvSuperResolutionEnabled
 	  && m_videoSettings.m_PlaceboFrameMixer == -1
 	  && m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 	{
-	  m_bUseNvSuperResolution = true;
+	  bUseNvSuperResolution = true;
 	}
   }
   if(m_RtxVideoProcessor.IsRtxHdrViable())
@@ -2040,7 +2040,7 @@ void CRendererPL::CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResoluti
 	  && m_videoSettings.m_PlaceboFrameMixer == -1
 	  && m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 		{
-	  m_bUseNvRtxHdr = true;
+	  bUseNvRtxHdr = true;
 		}
   }
 }
@@ -2092,6 +2092,8 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 
 		CRendererPL::OnRtxSettingChanged();
 		m_RtxVideoProcessor.FlushHistoryQueue();
+		ClearBuffer(buffer);
+
 		}
 	  }
 	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
