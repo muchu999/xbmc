@@ -242,6 +242,8 @@ using namespace XFILE;
 #define SETTING_LIB_PLACEBO_NV_RTX_PIPELINE_ENABLED             "video.libplacebo.nv_rtx_pipeline_enabled"
 #define SETTING_LIB_PLACEBO_NV_SUPER_RESOLUTION_ENABLED         "video.libplacebo.nv_super_resolution"
 #define SETTING_LIB_PLACEBO_NV_RTX_HDR_ENABLED                  "video.libplacebo.nv_rtx_hdr"
+#define SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS              "video.libplacebo.nv_rtx_disable_scalers"
+#define SETTING_LIB_PLACEBO_NV_RTX_FORCE_PIPELINE_ENABLED       "video.libplacebo.nv_rtx_force_pipeline_enabled"
 #define SETTING_LIB_PLACEBO_SDR_TARGET_CONTRAST                 "video.libplacebo.sdr_target_contrast"
 #define SETTING_LIB_PLACEBO_TARGET_COLORSPACE_HINT              "video.libplacebo.target_colorspace_hint"
 #define SETTING_LIB_PLACEBO_USE_HDR_FOR_SDR                     "video.libplacebo.use_hdr_for_sdr"
@@ -771,7 +773,7 @@ void CGUIDialogVideoSettings::OnSettingChanged(const std::shared_ptr<const CSett
   }
   else if(settingId == SETTING_LIB_PLACEBO_NV_RTX_PIPELINE_ENABLED)
   {
-	vs.m_PlaceboNvRtxPipelineEnabled = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
+	vs.m_PlaceboNvRtxPipelineEnabled = std::static_pointer_cast<const CSettingInt>(setting)->GetValue();
 	appPlayer->SetVideoSettings(vs);
   }
   else if(settingId == SETTING_LIB_PLACEBO_NV_SUPER_RESOLUTION_ENABLED)
@@ -782,6 +784,11 @@ void CGUIDialogVideoSettings::OnSettingChanged(const std::shared_ptr<const CSett
   else if(settingId == SETTING_LIB_PLACEBO_NV_RTX_HDR_ENABLED)
   {
 	vs.m_PlaceboNvRtxHdrEnabled = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
+	appPlayer->SetVideoSettings(vs);
+  }
+  else if(settingId == SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS)
+  {
+	vs.m_PlaceboNvRtxDisableScalers = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
 	appPlayer->SetVideoSettings(vs);
   }
   else if (settingId == SETTING_LIB_PLACEBO_SDR_TARGET_CONTRAST)
@@ -1939,9 +1946,15 @@ void CGUIDialogVideoSettings::InitializeSettings()
 	if(videoSettings.m_PlaceboTargetContrast > 0)
 	  dummy3 = std::max(-std::log10(videoSettings.m_PlaceboTargetContrast) * 20.0 + 141, 1.0);
 	AddSlider(groupOptions, SETTING_LIB_PLACEBO_TARGET_CONTRAST, 55383, SettingLevel::Basic, dummy3, -1, -1, 1, 121, 55383, usePopup);
-	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_PIPELINE_ENABLED, 55388, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxPipelineEnabled);
+
+	entries.clear();
+	entries.emplace_back(55390, static_cast<int>(SettinglibPlaceboNvRtxPipelineEnabled::AUTO));
+	entries.emplace_back(55391, static_cast<int>(SettinglibPlaceboNvRtxPipelineEnabled::NO));
+	entries.emplace_back(55392, static_cast<int>(SettinglibPlaceboNvRtxPipelineEnabled::YES));
+	AddSpinner(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_PIPELINE_ENABLED, 55388, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxPipelineEnabled, entries);
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_SUPER_RESOLUTION_ENABLED, 55386, SettingLevel::Basic, videoSettings.m_PlaceboNvSuperResolutionEnabled);
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_HDR_ENABLED, 55387, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxHdrEnabled);
+	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS, 55389, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxDisableScalers);
 
 	entries.clear();
 	entries.emplace_back(55315, static_cast<int>(SettinglibPlaceboTargetColorspaceHint::AUTO));

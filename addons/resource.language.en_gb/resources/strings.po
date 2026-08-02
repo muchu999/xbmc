@@ -25718,8 +25718,23 @@ msgid "  Video HDR"
 msgstr ""
 
 msgctxt "#55388"
-msgid "RTX video pipeline (req. playback restart, NVIDIA, DXVA, mixing disabled)"
+msgid "RTX video pipeline (req. mixing disabled, bypass queueing)"
 msgstr ""
 
+msgctxt "#55389"
+msgid "Disable scalers when super resolution is active"
+msgstr ""
+
+msgctxt "#55390"
+msgid "Auto"
+msgstr ""
+
+msgctxt "#55391"
+msgid "Off"
+msgstr ""
+
+msgctxt "#55392"
+msgid "On"
+msgstr ""
 
 

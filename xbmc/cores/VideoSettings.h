@@ -380,9 +380,10 @@ public:
   float m_PlaceboDisplayHdrPeakLuminance;
   float m_PlaceboDisplaySdrPeakLuminance;
   int m_PlaceboTargetContrast;
-  bool m_PlaceboNvRtxPipelineEnabled;
+  int m_PlaceboNvRtxPipelineEnabled;
   bool m_PlaceboNvSuperResolutionEnabled;
   bool m_PlaceboNvRtxHdrEnabled;
+  bool m_PlaceboNvRtxDisableScalers;
   int m_PlaceboSdrTargetContrast;
   int m_PlaceboTargetColorspaceHint;
   int m_PlaceboTargetColorspaceHintMode;

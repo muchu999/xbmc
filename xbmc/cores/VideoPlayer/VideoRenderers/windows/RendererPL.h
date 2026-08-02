@@ -39,6 +39,13 @@ extern "C"
 #define MAX_BLEND_PASSES 8
 #define MAX_BLEND_FRAMES 8
 
+enum class SettinglibPlaceboNvRtxPipelineEnabled
+{
+  AUTO = -1,
+  NO = 0,
+  YES = 1
+};
+
 enum class SettinglibPlaceboTargetColorspaceHint
 {
   AUTO = -1,
@@ -129,7 +136,9 @@ public:
   ~CRendererPL();
   void RenderStart(CRenderBuffer* rb, const CRect& sourceRect, const CRect& destRect);
   bool UploadBuffer(CRenderBuffer* buffer) override;
-  
+  void CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution);
+  void ClearBuffer(CRenderBuffer* buffer);
+
   bool CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height);
   bool CreateTempTarget(unsigned int width, unsigned int height);
   void UpdateVideoFilters() override;
@@ -140,6 +149,7 @@ public:
   void GetRendererIOFormat(bool& isInputHDR, bool& isOutputHDR);
   bool WantsDoublePass() override { return true; }
   bool Configure(const VideoPicture& picture, float fps, unsigned orientation) override;
+  //bool IsRtxPipelineActive() const { return m_RtxVideoProcessor.IsRtxPipelineEnabled(); }
 
   void AddVideoPicture(const VideoPicture& picture, int index) override; 
   static bool MapFrame(pl_gpu gpu, pl_tex* tex, const struct pl_source_frame* src, struct pl_frame* out_frame);

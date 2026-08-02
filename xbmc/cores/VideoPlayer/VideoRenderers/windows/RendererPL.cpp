@@ -282,37 +282,6 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
   if(!m_pVideoContext)
 	return false;
 
-  if(pBuf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
-  {
-	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
-	bool isFullRange = pBuf->full_range;
-	bool isBT601 = false; //(pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525);
-	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
-	inColorSpace.RGB_Range = isFullRange ? 0u : 1u;     // 0 = Full (0-255), 1 = Limited (16-235)
-	inColorSpace.YCbCr_Matrix = isBT601 ? 0u : 1u;      // 0 = BT.601, 1 = BT.709
-	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
-	inColorSpace.Nominal_Range = isFullRange ? 2u : 1u; // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
-	m_pVideoContext->VideoProcessorSetStreamColorSpace(m_pVideoProcessor.Get(), 0u, &inColorSpace);
-  }
-  else
-  {
-	D3D11_VIDEO_PROCESSOR_COLOR_SPACE inColorSpace = {};
-	inColorSpace.Usage = 0u;                            // 0 = Playback (Video content optimization)
-	inColorSpace.RGB_Range = 0u;                        // 0 = Full (0-255), 1 = Limited (16-235)
-	inColorSpace.YCbCr_Matrix = 1u;                     // 0 = BT.601, 1 = BT.709
-	inColorSpace.YCbCr_xvYCC = 0u;                      // 0 = Conventional YCbCr
-	inColorSpace.Nominal_Range = 2u;                    // 2 = Full range [0-255], 1 = Studio range [16-235] (YUV)
-	m_pVideoContext->VideoProcessorSetStreamColorSpace(m_pVideoProcessor.Get(), 0u, &inColorSpace);
-  }
-
-  D3D11_VIDEO_PROCESSOR_COLOR_SPACE outColorSpace = {};
-  outColorSpace.Usage = 0u;
-  outColorSpace.RGB_Range = 0u;
-  outColorSpace.YCbCr_Matrix = 1u;
-  outColorSpace.YCbCr_xvYCC = 1u;
-  outColorSpace.Nominal_Range = 2u;
-  m_pVideoContext->VideoProcessorSetOutputColorSpace(m_pVideoProcessor.Get(), &outColorSpace);
-
   // Get ID3D11VideoContext1
   Microsoft::WRL::ComPtr<ID3D11VideoContext1> pVideoContext1;
   HRESULT hr = m_pVideoContext.As(&pVideoContext1);
@@ -321,8 +290,8 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
 	CLog::LogF(LOGERROR, "Failed to get ID3D11VideoContext1: {}", hr);
 	return false;
   }
-  if(pBuf->videoBuffer->GetFormat() == AV_PIX_FMT_D3D11VA_VLD)
-  {
+  
+  // Input
 	if((pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525))
 	{
 	  if(pBuf->full_range)
@@ -337,17 +306,9 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
 	  else
 		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
 	}
-  }
-  else
-  {
-	pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
-  }
 
   // Output
   // To trigger the RTX HDR engine, the output target color space MUST be configured as an HDR container. 
-  // Rec. 2020 with the ST.2084 (PQ) transfer function matches DXGI_FORMAT_R10G10B10A2_UNORM 10-bit texture structure 
-  // DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 matches DXGI_FORMAT_R10G10B10A2_UNORM
-  // DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709 matches DXGI_FORMAT_R16G16B16A16_FLOAT
   if(bUseNvRtxHdr)
 	if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
@@ -1587,6 +1548,15 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
 	opt->color_adjustment.contrast = CPLHelper::ContrastKodi2Pl(videoSettings.m_PlaceboContrastSdrSdr);
   }
 
+  // RTX pipeline overrides
+  if(m_RtxVideoProcessor.IsRtxPipelineEnabled() && m_bUseNvSuperResolution && videoSettings.m_PlaceboNvRtxDisableScalers)
+  {
+	opt->params.upscaler = nullptr;
+	opt->params.downscaler = nullptr;
+	opt->params.plane_upscaler = nullptr;
+	opt->params.plane_downscaler = nullptr;
+  }
+
   // Target texture
   pl_d3d11_wrap_params d3dparams =
   {
@@ -2050,25 +2020,34 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
   }
 }
 
-void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, const CRect& destRect)
+void CRendererPL::CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution)
 {
-  CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
-  if(!buf || !buf->videoBuffer)
-	return;
-  // Check RTX setting changes
-  if(m_RtxVideoProcessor.IsRtxPipelineViable() && m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
+  m_bUseNvRtxHdr = false;
+  m_bUseNvSuperResolution = false;
+  if(m_RtxVideoProcessor.IsVsrViable())
   {
-	if(!m_RtxVideoProcessor.IsInitialized())
+	if(m_videoSettings.m_PlaceboNvSuperResolutionEnabled
+	  && m_videoSettings.m_PlaceboFrameMixer == -1
+	  && m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 	{
-	  if(m_viewWidth&&m_viewHeight)
+	  m_bUseNvSuperResolution = true;
+	}
+  }
+  if(m_RtxVideoProcessor.IsRtxHdrViable())
 	  {
-		if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))  // wrong size, will be re-created...
+	if(m_videoSettings.m_PlaceboNvRtxHdrEnabled
+	  && DX::DeviceResources::Get()->IsHDROutput1()  //cl 
+	  && m_videoSettings.m_PlaceboFrameMixer == -1
+	  && m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
 		{
-		  CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
+	  m_bUseNvRtxHdr = true;
 		}
-		else
+  }
+}
+
+void CRendererPL::ClearBuffer(CRenderBuffer* buffer)
 		{
-		  m_RtxVideoProcessor.FlushHistoryQueue();
+  CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
 		  if(buf->IsLoaded())
 		  {
 			if(buf->pltex [0])
@@ -2080,80 +2059,77 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 			}
 			buffer->ResetLoaded ();
 		  }
-		  m_RtxVideoProcessor.EnablePipeline();
-		  CRendererPL::OnRtxSettingChanged();
 		}
-	  }
-	}
-	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
-	{
-	  m_RtxVideoProcessor.FlushHistoryQueue();
-	  if(buf->IsLoaded())
-	  {
-		if(buf->pltex [0])
-		{
-		  for(int i = 0; i < buf->plFormat.num_planes; i++)
-		  {
-			pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-		  }
-		}
-		buffer->ResetLoaded ();
-	  }
-	  m_RtxVideoProcessor.EnablePipeline();
-	  CRendererPL::OnRtxSettingChanged();
-	}
-  }
-  else if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
-  {
-	m_RtxVideoProcessor.FlushHistoryQueue();
-	if(!m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
-	{
-	  if(buf->IsLoaded())
-	  {
-		if(buf->pltex [0])
-		{
-		  for(int i = 0; i < buf->plFormat.num_planes; i++)
-		  {
-			pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-		  }
-		}
-		buffer->ResetLoaded ();
-	  }
 
-	  m_RtxVideoProcessor.DisablePipeline();
-	  m_RtxVideoProcessor.FlushHistoryQueue();
-	  m_TempTarget.Release();
-	  m_SoftwareUploadTexture.Release();
-	  m_RtxVideoProcessor.UninitializePipeline();
-	  CRendererPL::OnRtxSettingChanged();
-	}
-  }
+void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, const CRect& destRect)
+	{
+  CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
+  if(!buf || !buf->videoBuffer)
+	return;
 
   m_bUseNvRtxHdr = false;
   m_bUseNvSuperResolution = false;
-  if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
-  {
-	if(m_RtxVideoProcessor.IsVsrViable())
-	{
-	  if(m_videoSettings.m_PlaceboNvSuperResolutionEnabled
-		&& m_videoSettings.m_PlaceboFrameMixer == -1
-		&& m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
+
+  bool bUseNvRtxHdr;
+  bool bUseNvSuperResolution;
+  CheckNvRTxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
+  bool bShouldEnable = (m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::YES) || ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO) && (bUseNvRtxHdr || bUseNvSuperResolution));
+  if(m_RtxVideoProcessor.IsRtxPipelineViable() && bShouldEnable)
 	  {
-		m_bUseNvSuperResolution = true;
+	// Pipeline should be enabled
+	if(!m_RtxVideoProcessor.IsInitialized())
+		{
+	  // Pipeline not initialized
+	  if(m_viewWidth && m_viewHeight) //cl on first call, view not set yet
+		  {
+		if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))  // wrong size, will be re-created...
+		{
+		  CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
+		  return;
+		  }
+		
+		m_RtxVideoProcessor.EnablePipeline();
+
+		CRendererPL::OnRtxSettingChanged();
+		m_RtxVideoProcessor.FlushHistoryQueue();
+		}
 	  }
+	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
+	{
+	  // Pipeline already initialized but not enabled, check if we should
+	  bool bUseNvRtxHdr;
+	  bool bUseNvSuperResolution;
+	  CheckNvRTxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
+
+	  if(bShouldEnable)
+	  {
+	  m_RtxVideoProcessor.EnablePipeline();
+
+	  CRendererPL::OnRtxSettingChanged();
+		m_RtxVideoProcessor.FlushHistoryQueue();
+		ClearBuffer(buffer);
 	}
-	if(m_RtxVideoProcessor.IsRtxHdrViable())
+  }
+  }
+  else if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
+  {
+	// Pipeline should not be enabled but it is, flush queue and check if we should destroy it
+	m_RtxVideoProcessor.FlushHistoryQueue();
+	if(m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::NO)
 	{
-	  if(m_videoSettings.m_PlaceboNvRtxHdrEnabled
-		&& DX::DeviceResources::Get()->IsHDROutput1()  //cl 
-		&& m_videoSettings.m_PlaceboFrameMixer == -1
-		&& m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
-	  {
-		m_bUseNvRtxHdr = true;
-	  }
+	  m_RtxVideoProcessor.DisablePipeline();
+
+	  CRendererPL::OnRtxSettingChanged();
+	  m_RtxVideoProcessor.FlushHistoryQueue();
+	  ClearBuffer(buffer);
+
+	  m_TempTarget.Release();
+	  m_SoftwareUploadTexture.Release();
+	  m_RtxVideoProcessor.UninitializePipeline();
 	}
   }
 
+  CheckNvRTxStatus(m_bUseNvRtxHdr, m_bUseNvSuperResolution);
   if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
   {
 	// If super resolution setting changed, flag it to make change at the beginning of frame rendering.
@@ -2161,17 +2137,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	{
 	  CRendererPL::OnRtxSettingChanged();
 	  m_RtxVideoProcessor.FlushHistoryQueue();
-	  if(buf->IsLoaded())
-	  {
-		if(buf->pltex [0])
-		{
-		  for(int i = 0; i < buf->plFormat.num_planes; i++)
-		  {
-			pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-		  }
-		}
-		buffer->ResetLoaded ();
-	  }
+	  ClearBuffer(buffer);
 	}
 	m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
 
@@ -2290,6 +2256,8 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  frameOut.repr.sys = frameIn.repr.sys;
 	  frameOut.repr.levels = frameIn.repr.levels;
 
+	  frameOut.color = frameIn.color;
+	  frameOut.repr = frameOut.repr;
 	  // Get format of output m_SoftwareUploadTexture
 	  D3D11_TEXTURE2D_DESC desc;
 	  m_SoftwareUploadTexture.Get()->GetDesc(&desc);
