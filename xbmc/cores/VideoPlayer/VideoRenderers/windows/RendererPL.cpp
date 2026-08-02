@@ -2068,6 +2068,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 		}
 		else
 		{
+		  m_RtxVideoProcessor.FlushHistoryQueue();
 		  if(buf->IsLoaded())
 		  {
 			if(buf->pltex [0])
@@ -2086,6 +2087,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	}
 	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
 	{
+	  m_RtxVideoProcessor.FlushHistoryQueue();
 	  if(buf->IsLoaded())
 	  {
 		if(buf->pltex [0])
@@ -2103,6 +2105,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
   }
   else if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
   {
+	m_RtxVideoProcessor.FlushHistoryQueue();
 	if(!m_videoSettings.m_PlaceboNvRtxPipelineEnabled)
 	{
 	  if(buf->IsLoaded())
@@ -2157,6 +2160,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	if(!m_bPreviousUseNvSuperResolution.has_value() || (m_bPreviousUseNvSuperResolution != m_bUseNvSuperResolution))
 	{
 	  CRendererPL::OnRtxSettingChanged();
+	  m_RtxVideoProcessor.FlushHistoryQueue();
 	  if(buf->IsLoaded())
 	  {
 		if(buf->pltex [0])
@@ -2682,7 +2686,8 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	CLog::LogF(LOGERROR, "RTX Processor: Missing valid input or output views for this frame.");
 	return false;
   }
-  if(std::abs(long(frameIdx - m_lastFrameIdx) > 10))
+
+  if(std::abs(int(frameIdx) - int(m_lastFrameIdx)) > 2)
   {
 	FlushHistoryQueue();
   }
