@@ -105,6 +105,7 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render,
   m_adapter->AddSubtitle(video.render4, 0., 5000000.);
   m_adapter->AddSubtitle(video.render5, 0., 5000000.);
   m_adapter->AddSubtitle(video.render6, 0., 5000000.);
+  m_adapter->AddSubtitle(render.queue, 0., 5000000.);
   m_adapter->AddSubtitle(render.judder, 0., 5000000.);
   m_adapter->AddSubtitle(render.guiComposeTime, 0., 5000000.);
   m_adapter->AddSubtitle(video.render7, 0., 5000000.);

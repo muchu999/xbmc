@@ -2138,7 +2138,8 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo()
   double meanv2, varv2, minv2, maxv2;;
   m_queueDepthTracker.calculateAll(meanv, varv, minv, maxv);
   m_SignalFrameReadyMonitor.calculateAll(meanv2, varv2, minv2, maxv2);
-  info.judder = StringUtils::Format("Main Loop time: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}, Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", minv2 * 1000.0, maxv2 * 1000.0, meanv2 * 1000.0, std::sqrt(varv) * 1000.0, minv, maxv, meanv, cadenceDropCount);
+  info.queue = StringUtils::Format("Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", minv, maxv, meanv, cadenceDropCount);
+  info.judder = StringUtils::Format("Main Loop time: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv2 * 1000.0, maxv2 * 1000.0, meanv2 * 1000.0, std::sqrt(varv2) * 1000.0);
 
   m_guiComposeTimeMonitor.calculateAll(meanv, varv, minv, maxv);
   info.guiComposeTime = StringUtils::Format("Render time (G) Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv*1000.0, maxv*1000.0, meanv*1000.0, std::sqrt(varv) * 1000.0);
