@@ -2020,7 +2020,7 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
   }
 }
 
-void CRendererPL::CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution)
+void CRendererPL::CheckNvRtxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution)
 {
   bUseNvRtxHdr = false;
   bUseNvSuperResolution = false;
@@ -2052,7 +2052,8 @@ void CRendererPL::ClearBuffer(CRenderBuffer* buffer)
 		  {
 			if(buf->pltex [0])
 			{
-			  for(int i = 0; i < buf->plFormat.num_planes; i++)
+	  //for(int i = 0; i < buf->plFormat.num_planes; i++)
+	  for(int i = 0; i < 3; i++)
 			  {
 				pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
 			  }
@@ -2072,7 +2073,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 
   bool bUseNvRtxHdr;
   bool bUseNvSuperResolution;
-  CheckNvRTxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
+  CheckNvRtxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
   bool bShouldEnable = (m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::YES) || ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO) && (bUseNvRtxHdr || bUseNvSuperResolution));
   if(m_RtxVideoProcessor.IsRtxPipelineViable() && bShouldEnable)
 	  {
@@ -2101,7 +2102,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	  // Pipeline already initialized but not enabled, check if we should
 	  bool bUseNvRtxHdr;
 	  bool bUseNvSuperResolution;
-	  CheckNvRTxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
+	  CheckNvRtxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
 
 	  if(bShouldEnable)
 	  {
@@ -2131,9 +2132,12 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	}
   }
 
-  CheckNvRTxStatus(m_bUseNvRtxHdr, m_bUseNvSuperResolution);
+  m_bUseNvRtxHdr = false;
+  m_bUseNvSuperResolution = false;
   if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
   {
+	m_bUseNvRtxHdr = bUseNvRtxHdr;
+	m_bUseNvSuperResolution = bUseNvSuperResolution;
 	// If super resolution setting changed, flag it to make change at the beginning of frame rendering.
 	if(!m_bPreviousUseNvSuperResolution.has_value() || (m_bPreviousUseNvSuperResolution != m_bUseNvSuperResolution))
 	{

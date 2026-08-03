@@ -136,7 +136,7 @@ public:
   ~CRendererPL();
   void RenderStart(CRenderBuffer* rb, const CRect& sourceRect, const CRect& destRect);
   bool UploadBuffer(CRenderBuffer* buffer) override;
-  void CheckNvRTxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution);
+  void CheckNvRtxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResolution);
   void ClearBuffer(CRenderBuffer* buffer);
 
   bool CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height);
