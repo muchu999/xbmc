@@ -292,20 +292,20 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
   }
   
   // Input
-	if((pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525))
-	{
-	  if(pBuf->full_range)
-		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P601);
-	  else
-		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601);
-	}
+  if((pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_625) || (pBuf->m_ColorSpace.primaries == PL_COLOR_PRIM_BT_601_525))
+  {
+	if(pBuf->full_range)
+	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P601);
 	else
-	{
-	  if(pBuf->full_range)
-		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
-	  else
-		pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
-	}
+	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601);
+  }
+  else
+  {
+	if(pBuf->full_range)
+	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
+	else
+	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+  }
 
   // Output
   // To trigger the RTX HDR engine, the output target color space MUST be configured as an HDR container. 
@@ -944,6 +944,8 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
 		  frameIn->color.transfer = PL_COLOR_TRC_SCRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM, PL_COLOR_TRC_SCRGB
 	    else
 	      frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+		//frameIn->color.hdr.min_luma = 0.01;  //cl ?  // Force libplacebo to use min_luma value set on output frame when rendering 
+		//frameIn->color.hdr.max_luma = 203;  //cl ?   
 	  }
 	}
 	else
@@ -2034,60 +2036,57 @@ void CRendererPL::CheckNvRtxStatus(bool& bUseNvRtxHdr, bool& bUseNvSuperResoluti
 	}
   }
   if(m_RtxVideoProcessor.IsRtxHdrViable())
-	  {
+  {
 	if(m_videoSettings.m_PlaceboNvRtxHdrEnabled
 	  && DX::DeviceResources::Get()->IsHDROutput1()  //cl 
 	  && m_videoSettings.m_PlaceboFrameMixer == -1
 	  && m_videoSettings.m_PlaceboFrameMixerBypassQueue == true)
-		{
+	{
 	  bUseNvRtxHdr = true;
-		}
+	}
   }
 }
 
 void CRendererPL::ClearBuffer(CRenderBuffer* buffer)
-		{
+{
   CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
-		  if(buf->IsLoaded())
-		  {
-			if(buf->pltex [0])
-			{
+  if(buf->IsLoaded())
+  {
+	if(buf->pltex [0])
+	{
 	  //for(int i = 0; i < buf->plFormat.num_planes; i++)
 	  for(int i = 0; i < 3; i++)
-			  {
-				pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-			  }
-			}
-			buffer->ResetLoaded ();
-		  }
-		}
+		{
+		pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
+	  }
+	}
+	buffer->ResetLoaded ();
+  }
+}
 
 void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, const CRect& destRect)
-	{
+{
   CRenderBufferImpl* buf = static_cast<CRenderBufferImpl*>(buffer);
   if(!buf || !buf->videoBuffer)
 	return;
-
-  m_bUseNvRtxHdr = false;
-  m_bUseNvSuperResolution = false;
 
   bool bUseNvRtxHdr;
   bool bUseNvSuperResolution;
   CheckNvRtxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
   bool bShouldEnable = (m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::YES) || ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO) && (bUseNvRtxHdr || bUseNvSuperResolution));
   if(m_RtxVideoProcessor.IsRtxPipelineViable() && bShouldEnable)
-	  {
+  {
 	// Pipeline should be enabled
 	if(!m_RtxVideoProcessor.IsInitialized())
-		{
+	{
 	  // Pipeline not initialized
 	  if(m_viewWidth && m_viewHeight) //cl on first call, view not set yet
-		  {
+	  {
 		if(!m_RtxVideoProcessor.InitializePipeline(buf->m_pictureWidth, buf->m_pictureHeight, buf->pictureFlags, m_viewWidth, m_viewHeight))  // wrong size, will be re-created...
 		{
 		  CLog::LogF(LOGDEBUG, "Rtx InitializePipeline failed");
 		  return;
-		  }
+		}
 		
 		m_RtxVideoProcessor.EnablePipeline();
 
@@ -2095,8 +2094,8 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 		m_RtxVideoProcessor.FlushHistoryQueue();
 		ClearBuffer(buffer);
 
-		}
 	  }
+	}
 	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
 	{
 	  // Pipeline already initialized but not enabled, check if we should
@@ -2106,13 +2105,13 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 
 	  if(bShouldEnable)
 	  {
-	  m_RtxVideoProcessor.EnablePipeline();
+		m_RtxVideoProcessor.EnablePipeline();
 
-	  CRendererPL::OnRtxSettingChanged();
+		CRendererPL::OnRtxSettingChanged();
 		m_RtxVideoProcessor.FlushHistoryQueue();
 		ClearBuffer(buffer);
+	  }
 	}
-  }
   }
   else if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
   {
@@ -2123,7 +2122,6 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	  m_RtxVideoProcessor.DisablePipeline();
 
 	  CRendererPL::OnRtxSettingChanged();
-	  m_RtxVideoProcessor.FlushHistoryQueue();
 	  ClearBuffer(buffer);
 
 	  m_TempTarget.Release();
@@ -2258,7 +2256,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  //frameOut.repr.bits.sample_depth = 16;
 	  //frameOut.repr.bits.bit_shift = 6;   // The mandatory P010 6-bit left shift!
 	  frameOut.color.primaries = buf->m_ColorSpace.primaries;
-	  frameOut.color.transfer = buf->m_ColorSpace.transfer;
+	  frameOut.color.transfer = buf->m_ColorSpace.transfer; //PL_COLOR_TRC_GAMMA24; //buf->m_ColorSpace.transfer;
 	  frameOut.repr.sys = frameIn.repr.sys;
 	  frameOut.repr.levels = frameIn.repr.levels;
 
