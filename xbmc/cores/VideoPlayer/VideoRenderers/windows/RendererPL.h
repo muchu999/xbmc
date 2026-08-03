@@ -161,7 +161,6 @@ public:
 
   static CRendererBase* Create(CVideoSettings& videoSettings);
   static void GetWeight(std::map<RenderMethod, int>& weights, const VideoPicture& picture);
-  static DXGI_FORMAT GetDXGIFormat(AVPixelFormat format, DXGI_FORMAT default_fmt);
   static bool InitializeFrame(pl_swapchain sw, pl_frame& frameOut);
   static int getColorDepth(void);
   std::unique_ptr<DXVA::CProcessorHD> m_processor;
@@ -169,7 +168,6 @@ public:
   DXVA::ProcessorConversion m_conversion;
   DXVA::SupportedConversionsArgs m_conversionsArgs;
   bool m_tryVSR {false};
-  DXVA::ProcessorConversion ChooseConversion(const DXVA::ProcessorConversions& conversions) const;
   void OnRtxSettingChanged();
   void HandleDeferredSync();
 

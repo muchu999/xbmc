@@ -226,55 +226,6 @@ CRenderInfo CRendererPL::GetRenderInfo()
   return  info;
 }
 
-DXVA::ProcessorConversion CRendererPL::ChooseConversion(const DXVA::ProcessorConversions& conversions) const
-{
-  assert(conversions.size() > 0);
-
-  // Try HQ except when the user opted out of high quality and the swap chain is 8 bits.
-  if(DX::Windowing()->IsHighPrecisionProcessingSettingEnabled() ||
-	DX::Windowing()->GetBackBuffer().GetFormat() == DXGI_FORMAT_R10G10B10A2_UNORM)
-  {
-	const auto it =
-	  std::find_if(conversions.cbegin(), conversions.cend(), [](const DXVA::ProcessorConversion& c) {
-	  return c.m_outputFormat == DXGI_FORMAT_R10G10B10A2_UNORM;
-		});
-
-	if(it != conversions.end())
-	  return *it;
-	else
-	  CLog::LogF(LOGDEBUG, "no compatible high precision format found.");
-  }
-
-  const auto it =
-	std::find_if(conversions.cbegin(), conversions.cend(), [](const DXVA::ProcessorConversion& c) {
-	return c.m_outputFormat == DXGI_FORMAT_B8G8R8A8_UNORM;
-	  });
-
-  if(it != conversions.end())
-	return *it;
-
-  // bad situation, nothing matching our needs found, return the first conversion available
-  CLog::LogF(LOGWARNING, "no conversion to wanted formats found, defaulting to first conversion.");
-  return conversions.front();
-}
-
-DXGI_FORMAT CRendererPL::GetDXGIFormat(AVPixelFormat format, DXGI_FORMAT default_fmt)
-{
-  switch(format)
-  {
-  case AV_PIX_FMT_NV12:
-  case AV_PIX_FMT_YUV420P:
-	return DXGI_FORMAT_NV12;
-  case AV_PIX_FMT_P010:
-  case AV_PIX_FMT_YUV420P10:
-	return DXGI_FORMAT_P010;
-  case AV_PIX_FMT_P016:
-  case AV_PIX_FMT_YUV420P16:
-	return DXGI_FORMAT_P016;
-  default:
-	return default_fmt;
-  }
-}
 
 bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr)
 {
