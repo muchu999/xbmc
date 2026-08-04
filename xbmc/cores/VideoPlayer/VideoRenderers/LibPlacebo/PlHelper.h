@@ -141,6 +141,9 @@ public:
   static double BrightnessKodi2Pl(double kodiBrightness);
   static double ContrastPl2Kodi(double plContrast);
   static double ContrastKodi2Pl(double kodiContrast);
+  static double GammaKodi2Pl(double kodiGamma);
+  static double GammaPl2Kodi(double plGamma);
+
   static void UpdateVideoSettingsFromLibPLaceboParams(CVideoSettings& vs);
   static void UpdateLibPLaceboParamsFromVideoSettings(CVideoSettings& vs);
   static void LoadLibplaceboSettings(CVideoSettings& vs);

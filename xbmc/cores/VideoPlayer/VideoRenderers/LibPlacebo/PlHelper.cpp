@@ -451,6 +451,14 @@ double CPLHelper::ContrastKodi2Pl(double kodiContrast)
 {
   return (std::pow(10.0, (kodiContrast - 50.0) / 25.0) - 0.01) * 100.0 / 99.0;
 }
+double CPLHelper::GammaKodi2Pl(double kodiGamma)
+{
+  return (std::pow(10.0, (kodiGamma-20.0)/40.0) - pow(10, -0.5)) / (1.0 - pow(10, -0.5));
+}
+double CPLHelper::GammaPl2Kodi(double plGamma)
+{
+  return log10f(plGamma * (1.0 - pow(10, -0.5)) + pow(10, -0.5)) * 40.0 + 20.0;
+}
 
 //cl this can be called from other threads which could cause a race condition
 void CPLHelper::SetVideoSettings(CVideoSettings& vs)
@@ -478,7 +486,7 @@ void CPLHelper::UpdateVideoSettingsFromLibPLaceboParams(CVideoSettings& vs)
 {
   pl_options m_placeboOptions = vs.m_placeboOptions->getPlOptions();
 
-  vs.m_Gamma = log10f(m_placeboOptions->color_adjustment.gamma * (1.0 - pow(10, -0.5)) + pow(10, -0.5)) * 40.0 + 20.0;
+  vs.m_Gamma = GammaPl2Kodi(m_placeboOptions->color_adjustment.gamma);
 
   vs.m_PlaceboColorAdjustmentEnabled = m_placeboOptions->params.color_adjustment != NULL;
   vs.m_PlaceboSaturation = log10f(m_placeboOptions->color_adjustment.saturation) * 40.0 + 50.0;
