@@ -1569,7 +1569,7 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
 	  (m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM))
 	{
 	  //cl Adjust gamma with trial/error value for this particular case or image is too bright out of blit??>
-	  hooks.push_back(pGammaHook);
+	  //hooks.push_back(pGammaHook);
 	}
   }
 
