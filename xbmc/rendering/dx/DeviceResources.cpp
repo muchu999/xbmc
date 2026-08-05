@@ -1428,6 +1428,8 @@ void DX::DeviceResources::Present()
   }
 else
   {
+	int64_t endTime;
+
 	// single threaded mode
 	StopPresentThread(); //cl hot switch...
 	StopWatchdog();
@@ -1497,6 +1499,7 @@ else
 		m_guiComposeTimeMonitor.update(newSample);
 	  }
 
+	  endTime = CurrentHostCounter();
 
 	  if(m_swapChain)
 	  {
@@ -1507,7 +1510,15 @@ else
 		m_lastVsyncTimestamp.store(qpc.QuadPart, std::memory_order_release);
 	  }
 	}
+
+	static int64_t prevStart = 0;
+	int64_t startTime = CurrentHostCounter();
+	float duration = (endTime - prevStart) / (float) CurrentHostFrequency();
+	m_SignalFrameReadyMonitor.update(duration);
+	prevStart = startTime;
+
   }
+
 
   UINT64 end = CurrentHostCounter();
   UINT64 presentDuration = end - start;
