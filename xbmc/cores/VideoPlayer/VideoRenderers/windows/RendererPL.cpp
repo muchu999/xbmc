@@ -51,9 +51,6 @@
 using namespace XFILE;
 using namespace Microsoft::WRL;
 
-//DXGI_FORMAT TempTargetDxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;  //couldn't figure that one out yet, enabling super resolution result in over saturation, changing min_luma to 5 brings us closer but it is not a solution.
-DXGI_FORMAT TempTargetDxgiFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
-
 CRendererPL::~CRendererPL()
 {
   if(*PL::PLInstance::Get()->GetQueue()) 
@@ -227,7 +224,7 @@ CRenderInfo CRendererPL::GetRenderInfo()
 }
 
 
-bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr)
+bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr, DXGI_FORMAT TempTargetDxgiFormat)
 {
   CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(pBuffer);
   if(!m_pVideoContext)
@@ -263,11 +260,13 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
   if(bUseNvRtxHdr)
 	if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+	else if(TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM)
+	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
 	else
 	  pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020); //DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;  DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
   else
   {
-	static DXGI_COLOR_SPACE_TYPE color = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+	static DXGI_COLOR_SPACE_TYPE color = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;  //NOt making a difference in many cases, G10 G22...
 	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, color);
   }
 
@@ -469,7 +468,7 @@ bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned i
   if(m_SoftwareUploadTexture.Get())
 	m_SoftwareUploadTexture.Release();
 
-  DXGI_FORMAT format = TempTargetDxgiFormat;
+  DXGI_FORMAT format;
   if(pBuf->pictureFlags & DVP_FLAG_INTERLACED)
   {
 	// RTX pipeline doesn't deinterlace P010 
@@ -505,12 +504,11 @@ bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned i
 
 bool CRendererPL::CreateTempTarget(unsigned int width, unsigned int height)
 {
-  DXGI_FORMAT format = TempTargetDxgiFormat;
   unsigned int w = width; //FFALIGN(width, 128);
   unsigned int h = height; //FFALIGN(height, 128);
 
   // don't create new one if it exists with requested size and format
-  if(m_TempTarget.Get() && m_TempTarget.GetFormat() == format &&
+  if(m_TempTarget.Get() && m_TempTarget.GetFormat() == m_TempTargetDxgiFormat &&
 	m_TempTarget.GetWidth() == w && m_TempTarget.GetHeight() == h &&
 	m_TempTarget.GetbUseUnordered() == false)
 	return true;
@@ -520,9 +518,9 @@ bool CRendererPL::CreateTempTarget(unsigned int width, unsigned int height)
   m_pTempTargetView.Reset();
 
   CLog::LogF(LOGDEBUG, "creating temp target {}x{} format {}.", w, h,
-	DX::DXGIFormatToString(format));
+	DX::DXGIFormatToString(m_TempTargetDxgiFormat));
 
-  if(!m_TempTarget.Create(w, h, 1,	D3D11_USAGE_DEFAULT, format, nullptr, 0, false))
+  if(!m_TempTarget.Create(w, h, 1,	D3D11_USAGE_DEFAULT, m_TempTargetDxgiFormat, nullptr, 0, false))
   {
 	CLog::LogF(LOGERROR, "Temp target creation failed.");
 	return false;
@@ -770,8 +768,13 @@ struct priv {
 int CRendererPL::getColorDepth()
 {
   pl_frame frame;
-  InitializeFrame(PL::PLInstance::Get()->GetSwapchain(), frame);
-  return(frame.repr.bits.color_depth);
+  if(PL::PLInstance::Get()->GetGpu())
+  {
+    InitializeFrame(PL::PLInstance::Get()->GetSwapchain(), frame);
+    return(frame.repr.bits.color_depth);
+  }
+  else
+	return 8;
 }
 
 bool CRendererPL::InitializeFrame(pl_swapchain sw, pl_frame &frameOut)
@@ -858,32 +861,42 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
 	{
 	  if(m_bUseNvSuperResolution)
 	  {
-		// When monitor is in HDR mode, super resolution will automatically output in HDR
 		if(DX::DeviceResources::Get()->IsHDROutput1())
 		{
-		  frameIn->color.primaries = PL_COLOR_PRIM_BT_2020;
-		  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		  if(m_TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		  {
+			frameIn->color.primaries = PL_COLOR_PRIM_BT_2020;
 			frameIn->color.transfer = PL_COLOR_TRC_SCRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM PL_COLOR_TRC_SCRGB
 			frameIn->color.hdr = {};
-			frameIn->color.hdr.min_luma = 0.0005;  //cl ?
+			frameIn->color.hdr.min_luma = 0.000001;  //cl ?
+			frameIn->color.hdr.max_luma = 1000.0;  //cl ?
+		  }
+		  else if(m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM)
+		  {
+			// Using super resolution in HDR mode result in a brighter image.
+			frameIn->color.primaries = PL_COLOR_PRIM_BT_2020;
+			frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+			frameIn->color.hdr = {};
+			frameIn->color.hdr.min_luma = 0.000001;  //cl ?
 			frameIn->color.hdr.max_luma = 1000.0;  //cl ?
 		  }
 		  else
 		  {
-			// Using super resolution in HDR mode result in a brighter image, not sure how to correct it
-			frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+			// Using super resolution in HDR mode result in a brighter image.
+			frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
+			frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
 			frameIn->color.hdr = {};
-			frameIn->color.hdr.min_luma = 0.0005;  //cl ?
+			frameIn->color.hdr.min_luma = 0.000001;  //cl ?
 			frameIn->color.hdr.max_luma = 1000.0;  //cl ?
-
 		  }
 		}
 		else
 		{
 		  frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
-		  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		  if(m_TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 			frameIn->color.transfer = PL_COLOR_TRC_LINEAR;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+		  else if(m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM)
+			frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
 		  else
 			frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
 		}
@@ -891,25 +904,30 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
 	  else
 	  {
 	    frameIn->color.primaries = PL_COLOR_PRIM_BT_709;
-	    if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+	    if(m_TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		  frameIn->color.transfer = PL_COLOR_TRC_SCRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM, PL_COLOR_TRC_SCRGB
-	    else
-	      frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
-		//frameIn->color.hdr.min_luma = 0.01;  //cl ?  // Force libplacebo to use min_luma value set on output frame when rendering 
-		//frameIn->color.hdr.max_luma = 203;  //cl ?   
+		else if(m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM)
+		  frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+		else
+		  frameIn->color.transfer = PL_COLOR_TRC_GAMMA24; //PL_COLOR_TRC_GAMMA22 ; //PL_COLOR_TRC_SRGB;      //PL_COLOR_TRC_LINEAR for DXGI_FORMAT_R16G16B16A16_FLOAT, PL_COLOR_TRC_SRGB for DXGI_FORMAT_R10G10B10A2_UNORM
+
+		frameIn->color.hdr.min_luma = 0.000001;  //cl ?  // Force libplacebo to use min_luma value set on output frame when rendering 
+		//frameIn->color.hdr.max_luma = 1000.0;  //cl ?   
 	  }
 	}
 	else
 	{
 	  frameIn->color.primaries = PL_COLOR_PRIM_BT_2020; //PL_COLOR_PRIM_BT_709;
 
-	  if(TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+	  if(m_TempTargetDxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		frameIn->color.transfer = PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
+	  else if(m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM)
+		frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
 	  else
 		frameIn->color.transfer = PL_COLOR_TRC_PQ; //PL_COLOR_TRC_LINEAR; //PL_COLOR_TRC_HLG; // PL_COLOR_TRC_PQ;
 
 	  frameIn->color.hdr = {};
-	  frameIn->color.hdr.min_luma = 0.0005;
+	  frameIn->color.hdr.min_luma = 0.000001;
 	  frameIn->color.hdr.max_luma = 1000.0;
 	}
 
@@ -1072,7 +1090,7 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamDestRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &streamDestRect);
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetOutputTargetRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), TRUE, &destRect);
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamRotation(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, false, static_cast<D3D11_VIDEO_PROCESSOR_ROTATION>(0 / 90));
-	m_RtxVideoProcessor.ConfigureColorSpaces(buf, m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr);  //cl placement
+	m_RtxVideoProcessor.ConfigureColorSpaces(buf, m_RtxVideoProcessor.m_pVideoProcessor.Get(), m_bUseNvRtxHdr, m_TempTargetDxgiFormat);  //cl placement
 	m_RtxVideoProcessor.EnableNvidiaVideoSuperResolution(m_bUseNvSuperResolution);
 	m_RtxVideoProcessor.EnableNvidiaRtxVideoHdr(m_bUseNvRtxHdr);
 
@@ -1146,8 +1164,8 @@ void CRendererPL::RenderImpl(CD3DTexture& target, CRect& sourceRect, CPoint(&des
 	RenderDx(target, sourceRect, destPoints, flags, canSkip);
     #ifdef BYPASS_LIBPLACEBO
 	  // only works if temp target and intermediate texture have same format...
-	  //m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_TempTarget.Get(), destPoints);
-	  m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_SoftwareUploadTexture.Get(), destPoints);
+	  m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_TempTarget.Get(), destPoints);
+	  //m_RtxVideoProcessor.DebugBypassToDisplay(sourceRect, target.Get(), m_SoftwareUploadTexture.Get(), destPoints);
 	sourceRect = dst; //cl Pass dst to next render stage...
 	  return;
     #endif
@@ -1540,11 +1558,23 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
   m_ScreenFps = static_cast<double>(CServiceBroker::GetWinSystem()->GetGfxContext().GetFPS());
 
   // Shaders
+  static std::vector<const pl_hook*> hooks;
+  hooks.clear();
+
+  const pl_hook* pGammaHook = PL::PLInstance::Get()->GetGammaShaderHook().get();
+  if(pGammaHook)
+  {
+	if(m_RtxVideoProcessor.IsRtxPipelineEnabled() && m_bHdrOut &&
+	  !m_RtxVideoProcessor.IsStreamHdr() && !m_bUseNvRtxHdr && m_bUseNvSuperResolution &&
+	  (m_TempTargetDxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM))
+	{
+	  //cl Adjust gamma with trial/error value for this particular case or image is too bright out of blit??>
+	  hooks.push_back(pGammaHook);
+	}
+  }
+
   if((videoSettings.m_PlaceboShadersHooks.size() > 0) && (videoSettings.m_PlaceboShaderApply))
   {
-	static std::vector<const pl_hook*> hooks;
-
-	hooks.clear();
 	for(int i = 0; i < videoSettings.m_PlaceboShadersHooks.size(); ++i)
 	{
 	  if(videoSettings.m_PlaceboShadersEnabled [i] && videoSettings.m_PlaceboShadersHooks.m_Valid [i])
@@ -1552,19 +1582,15 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
 		hooks.push_back(videoSettings.m_PlaceboShadersHooks.m_Hooks [i].get());
 	  }
 	}
-	if(hooks.size() > 0)
-	{
-	  params->hooks = hooks.data();
-	  params->num_hooks = hooks.size();
-	}
-	else
-	{
-	  params->num_hooks = 0;
-	}
+  }
+
+  if(hooks.size() > 0)
+  {
+	params->hooks = hooks.data();
+	params->num_hooks = hooks.size();
   }
   else
   {
-	//cl params.hooks = nullptr;
 	params->num_hooks = 0;
   }
 
@@ -1659,7 +1685,7 @@ void CRendererPL::RenderSingle(CRenderBufferImpl* buffer, double renderPts, CVid
 	{
 	  pDeviceContext->Begin(current_frame.disjoint);
 	  pDeviceContext->End(current_frame.start);
-	  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, params);
+ 	  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, params);
 
 	  pDeviceContext->End(current_frame.end);
 	  pDeviceContext->End(current_frame.disjoint);
@@ -2096,6 +2122,17 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	}
 	m_bPreviousUseNvSuperResolution = m_bUseNvSuperResolution;
 
+	// Decide temp target format
+	if(false) // !m_RtxVideoProcessor.IsStreamHdr() && !m_bUseNvRtxHdr && m_bUseNvSuperResolution && m_bHdrOut)
+	{
+	  m_TempTargetDxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	}
+	else
+	{
+	  //cl In this case the blit output is too bright, applying a gamma of 0.826 fixes 99.9%
+	  m_TempTargetDxgiFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+	}
+
 	// Create temp target
 	if(m_bUseNvSuperResolution)
 	{
@@ -2108,6 +2145,8 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	{
 	  CreateTempTarget(sourceRect.Width(), sourceRect.Height());
 	}
+
+	//cl Create software upload target, could first check if we need it...
 	CreateSoftwareUploadTarget(buf, buf->m_pictureWidth, buf->m_pictureHeight);
   }
   else
@@ -2134,7 +2173,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  params.tex = m_TempTarget.Get();
 	  params.w = m_TempTarget.GetWidth();
 	  params.h = m_TempTarget.GetHeight();
-	  params.fmt = TempTargetDxgiFormat;
+	  params.fmt = m_TempTargetDxgiFormat;
 	  params.array_slice = 0;
 
 	  buf->pltex [0] = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params);
@@ -2153,7 +2192,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 
 	  //if(buffer->plFormat.num_planes == -1)  //cl optimize
 	  {
-		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, TempTargetDxgiFormat);
+		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, m_TempTargetDxgiFormat);
 	  }
 	  return buf->SetLoaded();
 
@@ -2272,7 +2311,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  params2.tex = m_TempTarget.Get();
 	  params2.w = m_TempTarget.GetWidth();
 	  params2.h = m_TempTarget.GetHeight();
-	  params2.fmt = TempTargetDxgiFormat;
+	  params2.fmt = m_TempTargetDxgiFormat;
 	  params2.array_slice = 0;
 
 	  buf->pltex [0] = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params2);
@@ -2291,7 +2330,7 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  // Fill format for new input to libplacebo (m_TempTarget)
 	  //if(buffer->plFormat.num_planes == -1)  //cl optimize
 	  {
-		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, TempTargetDxgiFormat);
+		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, m_TempTargetDxgiFormat);
 	  }
 
 
@@ -2467,6 +2506,39 @@ bool CRTXVideoProcessor::EnsureProcessorSize(UINT inW, UINT inH, unsigned int iF
   return true;
 }
 
+ProcessorFormats CRTXVideoProcessor::GetProcessorFormats(bool inputFormats, bool outputFormats) const
+{
+  // Not initialized yet
+  if(!m_pVideoEnumerator)
+	return {};
+
+  ProcessorFormats formats;
+  HRESULT hr {};
+  UINT uiFlags {0};
+  for(int fmt = DXGI_FORMAT_UNKNOWN; fmt <= DXGI_FORMAT_V408; fmt++)
+  {
+	const DXGI_FORMAT dxgiFormat = static_cast<DXGI_FORMAT>(fmt);
+	if(S_OK == (hr = m_pVideoEnumerator->CheckVideoProcessorFormat(dxgiFormat, &uiFlags)))
+	{
+	  if((uiFlags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT) && inputFormats)
+		formats.m_input.push_back(dxgiFormat);
+	  if((uiFlags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT) && outputFormats)
+		formats.m_output.push_back(dxgiFormat);
+	}
+	else
+	{
+	  CLog::LogF(LOGWARNING,
+		"Unable to retrieve support of the dxva processor for format {}, error {}",
+		DX::DXGIFormatToString(dxgiFormat), CWIN32Util::FormatHRESULT(hr));
+	  return formats;
+	}
+  }
+  formats.m_valid = true;
+
+  return formats;
+}
+
+
 bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int height, unsigned int iFlags, unsigned int m_viewWidth, unsigned int m_viewHeight)
 {
   // Get D3D device
@@ -2505,7 +2577,9 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   hr = m_pVideoDevice->CreateVideoProcessorEnumerator(&desc, m_pVideoEnumerator.GetAddressOf());
   if(FAILED(hr)) 
 	return false;
-
+  
+  //GetProcessorFormats(true, true);
+  // 
   // Get video context
   hr = pImmediateContext->QueryInterface(__uuidof(ID3D11VideoContext), reinterpret_cast<void**>(m_pVideoContext.GetAddressOf()));
   if(FAILED(hr)) 
@@ -2615,24 +2689,31 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	return false;
   }
 
-  // flush queue in case of discontinuous frames
   D3D11_VIDEO_FRAME_FORMAT fieldFFormat = pictFlags & DVP_FLAG_INTERLACED ? pictFlags & DVP_FLAG_TOP_FIELD_FIRST ? D3D11_VIDEO_FRAME_FORMAT_INTERLACED_TOP_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_INTERLACED_BOTTOM_FIELD_FIRST : D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
   bool bIsInterlaced = !(fieldFFormat == D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+  int fieldIndex = !bIsInterlaced ? 0 : (flags & RENDER_FLAG_FIELD0) ? 0 : 1;
+  unsigned int streamFrameIndex = bIsInterlaced ? frameIdx + fieldIndex : frameIdx / 2; //cl
+
+  // flush queue in case of discontinuous frames
   int maxStepSize = bIsInterlaced ? 4 : 2;
   if(std::abs(int(frameIdx) - int(m_lastFrameIdx)) > maxStepSize)
   {
 	FlushHistoryQueue();
   }
-  m_lastFrameIdx = frameIdx;
 
-  // Interlacing params
-  int fieldIndex = !bIsInterlaced ? 0 : (flags & RENDER_FLAG_FIELD0) ? 0 : 1;
-  unsigned int streamFrameIndex = bIsInterlaced ? frameIdx + fieldIndex : frameIdx / 2; //cl
+  // In case  of interlaced material in paused mode, avoid getting a black screen when toggling RTX features.
+  bool bForceRepeat = false;
+  if(bIsInterlaced && (frameIdx == m_lastFrameIdx) && (fieldIndex == m_lastFieldIdx))
+  {
+	bForceRepeat = true;
+  }
+  m_lastFieldIdx = fieldIndex;
+  m_lastFrameIdx = frameIdx;
 
   // Only update queue for new complete frames
   int totalNeeded = 1 + m_numPastFrames + m_numFutureFrames;
   bool isNewTexturePass = (bIsInterlaced && fieldIndex == 1) ? false : true;
-  if(isNewTexturePass)
+  if(isNewTexturePass || bForceRepeat)
   {
 	CRendererPL::CRenderBufferImpl* pBuf = static_cast<CRendererPL::CRenderBufferImpl*>(pBuffer);
 	pBuf->m_NeedFrame = true;
@@ -2703,11 +2784,11 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 void CRTXVideoProcessor::EvaluateRtxCapability(const VideoPicture& picture)
 {
   
-  m_isVsrViable = DX::DeviceResources::Get()->IsSuperResolutionSupported() && (picture.iWidth < 3840 && picture.iHeight < 2160);
-
   m_bStreamIsHDR = (picture.color_primaries == AVCOL_PRI_BT2020) && (picture.color_transfer == AVCOL_TRC_SMPTE2084 || picture.color_transfer == AVCOL_TRC_ARIB_STD_B67);
+  
+  //cl Super resolution with e.g. 1080p HDR material has washed out colors, need special correction, disable for now
+  m_isVsrViable = DX::DeviceResources::Get()->IsSuperResolutionSupported() && (picture.iWidth < 3840) && (picture.iHeight < 2160) && !m_bStreamIsHDR;
   m_isRtxHdrViable = DX::DeviceResources::Get()->IsRtxVideoHdrSupported() && !m_bStreamIsHDR;
-
   m_isRtxPipelineViable = (m_isVsrViable || m_isRtxHdrViable);
 }
 

@@ -163,8 +163,90 @@ bool PL::PLInstance::Init()
   // Queue
   m_plQueue = pl_queue_create(PL::PLInstance::Get()->GetGpu());
 
+  // Shaders
+  InitGammaShader();
+
   m_isInitialized = true;
   return true;
+}
+
+void PL::PLInstance::InitGammaShader()
+{
+  const char* pBuffer2 = R"(
+    //!PARAM gamma
+    //!DESC Gain to apply to image brightness
+    //!TYPE float
+    //!MINIMUM 0.1
+    //!MAXIMUM 10.0
+    1.0
+
+    //!HOOK RGB
+    //!BIND HOOKED
+    //!DESC Gamma Correction for libplacebo
+
+    vec4 hook() {
+	// 1. Sample the raw uncorrected output texture frame
+	vec4 color = HOOKED_tex(HOOKED_pos);
+
+	// Safety clamp to prevent AI upscaler negative edge-ringing (NaN prevention)
+	//color.rgb = max(color.rgb, vec3(0.0));
+
+    color.rgb = pow(clamp(color.rgb, 0.0, 1.0), vec3(1.0 / gamma));
+
+	// 2. The Color Realignment Matrix.
+	// Instead of using exponents that warp colors, we apply a dedicated matrix rotation.
+	// This scales down the red channel to fix the overblown red intensity, 
+	// absorbs the cross-talk bleed into the green channel, and balances the blue floor.
+	mat3 hardware_matrix_fix = mat3(
+	  1.013, 0.000, 0.000,  // Row 1: Pins and attenuates your target Red intensity
+	  0.000, 0.99, 0.000,  // Row 2: Compensates and gently boosts the Green channel drop
+	  0.000, 0.000, 1.000   // Row 3: Keeps the Blue anchor locked at 1:1 unity
+	);
+
+	// Execute the linear channel translation
+	color.rgb = hardware_matrix_fix * color.rgb;
+
+	// 3. Final safety boundary clamp to fit the 10-bit target spectrum perfectly
+	color.rgb = clamp(color.rgb, vec3(0.0), vec3(1.0));
+
+	return color;
+  }
+  )";
+
+
+  const char* pBuffer = R"(
+    //!PARAM gamma
+    //!DESC Gain to apply to image brightness
+    //!TYPE float
+    //!MINIMUM 0.1
+    //!MAXIMUM 10.0
+    1.0
+
+    //!HOOK RGB
+    //!BIND HOOKED
+    //!DESC Gamma Correction for libplacebo
+
+    vec4 hook() {
+      vec4 color = HOOKED_texOff(0);
+      // Apply gamma correction securely clamped to valid 0.0 - 1.0 color bounds
+      color.rgb = pow(clamp(color.rgb, 0.0, 1.0), vec3(1.0 / gamma));
+      return color;
+    }
+  )";
+
+  size_t len = strlen(pBuffer);
+  const pl_hook* pHook = pl_mpv_user_shader_parse(GetGpu(), pBuffer, len);
+  if(pHook)
+  {
+	float gamma = 0.825;
+	pHook->parameters [0].data->f = gamma;
+	std::shared_ptr<const pl_hook> SharedHook(pHook, [](const pl_hook* p) { pl_mpv_user_shader_destroy(&p); });
+	pGammaShaderHook = SharedHook;
+  }
+  else
+  {
+	CLog::LogF(LOGERROR, "Error parsing gamma shader");
+  }
 }
 
 void PL::PLInstance::DestroySwapchain(void)
@@ -270,6 +352,7 @@ void PL::PLInstance::LogCurrent()
   CLog::Log(LOGINFO, "LibPlaceboCurrent Color Settings: Transfer: {}", sTrans.c_str());
   CLog::Log(LOGINFO, "LibPlaceboCurrent Color Settings: Matrix: {}", sSys.c_str());
 }
+
 
 void PL::PLInstance::fill_d3d_format(pl_d3d_format* info, DXGI_FORMAT format)
 {

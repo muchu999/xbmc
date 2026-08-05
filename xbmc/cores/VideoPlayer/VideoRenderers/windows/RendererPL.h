@@ -69,6 +69,14 @@ struct SRequestContext
   CRenderBuffer* buffer;
 };
 
+struct ProcessorFormats
+{
+  std::vector<DXGI_FORMAT> m_input;
+  std::vector<DXGI_FORMAT> m_output;
+  bool m_valid {false};
+};
+
+
 class CRTXVideoProcessor
 {
 public:
@@ -83,13 +91,14 @@ public:
   UINT m_currentOutputHeight = 0;
   
   bool IsInitialized() const { return m_bInitialized; }
+  ProcessorFormats GetProcessorFormats(bool inputFormats, bool outputFormats) const;
 
   bool InitializePipeline(unsigned int width, unsigned int height, unsigned int iFlags, unsigned int m_viewWidth, unsigned int m_viewHeight);
   void ProcessVideoFrame(ID3D11VideoProcessorInputView* inputView, ID3D11VideoProcessorOutputView* outputView);
   void UninitializePipeline();
   bool ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, CRenderBuffer* pBuffer, ID3D11VideoProcessorOutputView* pOutputView, unsigned int pictFlags, uint32_t flags, uint64_t frameIdx);
   void DebugBypassToDisplay(CRect& srcRect, ID3D11Texture2D* pOutputWindowTexture, ID3D11Texture2D* pTempTarget, CPoint(&destPoints) [4]);
-  bool ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr);
+  bool ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11VideoProcessor* pProcessor, bool bUseNvRtxHdr, DXGI_FORMAT TempTargetDxgiFormat);
   bool EnsureProcessorSize(UINT inW, UINT inH, unsigned int iFlags, UINT outW, UINT outH);
   void FlushHistoryQueue();
   void EvaluateRtxCapability(const VideoPicture& picture);
@@ -102,7 +111,6 @@ public:
   bool IsStreamHdr() const { return m_bStreamIsHDR; }
   void EnableNvidiaVideoSuperResolution(bool bEnable);
   void EnableNvidiaRtxVideoHdr(bool bEnable);
-  uint64_t m_lastFrameIdx = 0;
 
 private:
   bool m_bStreamIsHDR = false;
@@ -113,9 +121,10 @@ private:
   bool m_isRtxPipelineEnabled = false;
   bool m_wasVsrEnabled = false;
   bool m_wasHdrEnabled = false;
-
   int m_numPastFrames = 0;
   int m_numFutureFrames = 0;
+  uint64_t m_lastFrameIdx = 0;
+  uint64_t m_lastFieldIdx = 0;
 
   // Deque to cache incoming frame views. 
   // They must remain alive in VRAM until pushed out of the tracking history window.
@@ -219,7 +228,9 @@ private:
   int m_lastFieldIndex;
   bool m_bLastNvSuperResolution;
   bool m_bLastNvRtxHdr;
-
+  //DXGI_FORMAT m_TempTargetDxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;  //couldn't figure that one out yet, enabling super resolution result in over saturation, changing min_luma to 5 brings us closer but it is not a solution.
+  //DXGI_FORMAT m_TempTargetDxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+  DXGI_FORMAT m_TempTargetDxgiFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 
   int m_FrameMixerQueueResets = 0;
 

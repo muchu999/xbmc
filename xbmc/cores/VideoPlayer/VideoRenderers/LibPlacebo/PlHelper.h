@@ -41,6 +41,7 @@ extern "C" {
 #include <libplacebo/cache.h>
 #include <libplacebo/utils/frame_queue.h>
 #include <rendering/dx/DeviceResources.h>
+#include <libplacebo/shaders/custom.h>
 
 #define MAX_FRAME_PASSES 256
 #define MAX_BLEND_PASSES 8
@@ -72,13 +73,15 @@ namespace PL
 	void SetupSwapchainCallback(DX::DeviceResources& publisher);
 	void OnSwapchainEventReceived(const std::string& message);
 	void TeardownSwapchainCallback(DX::DeviceResources& publisher);
+	void InitGammaShader();
 
 	pl_d3d11 GetD3d11() { return m_plD3d11; }
 	pl_swapchain GetSwapchain() { return m_plSwapchain; }
 	pl_renderer GetRenderer() { return m_plRenderer; }
-	pl_gpu GetGpu() { return m_plD3d11->gpu; }
+	pl_gpu GetGpu() { if(!m_plD3d11) return nullptr; else return m_plD3d11->gpu; }
 	pl_cache* GetCache() { return &m_plCache; }
 	pl_queue* GetQueue() { return &m_plQueue; }
+	std::shared_ptr<const pl_hook> GetGammaShaderHook() { return pGammaShaderHook; }
 	void fill_d3d_format(pl_d3d_format* info, DXGI_FORMAT format);
 	void LogCurrent();
 
@@ -91,6 +94,8 @@ namespace PL
 	pl_d3d11 m_plD3d11 = nullptr;
 	pl_swapchain m_plSwapchain = nullptr;
 	pl_renderer m_plRenderer = nullptr;
+	std::shared_ptr<const pl_hook> pGammaShaderHook = nullptr;
+
 
 	int CurrentPrim;
 	int Currenttransfer;
