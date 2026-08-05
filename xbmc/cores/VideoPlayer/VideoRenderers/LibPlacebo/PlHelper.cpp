@@ -170,6 +170,15 @@ bool PL::PLInstance::Init()
   return true;
 }
 
+void PL::PLInstance::SetGammaShaderGamma(float gamma)
+{
+  if(pGammaShaderHook && pGammaShaderHook.get())
+  {
+	//float gamma = 0.825;
+	pGammaShaderHook.get()->parameters [0].data->f = gamma;
+  }
+}
+
 void PL::PLInstance::InitGammaShader()
 {
   const char* pBuffer2 = R"(
@@ -845,6 +854,7 @@ void CPLHelper::SaveLibplaceboSettings(const CVideoSettings& vs, TiXmlNode* pNod
   XMLUtils::SetFloat(pNode, "placebocontrasthdrsdr", vs.m_PlaceboContrastHdrSdr);
   XMLUtils::SetFloat(pNode, "placebobrightnesssdrhdr", vs.m_PlaceboBrightnessSdrHdr);
   XMLUtils::SetFloat(pNode, "placebocontrastsdrhdr", vs.m_PlaceboContrastSdrHdr);
+  XMLUtils::SetFloat(pNode, "placebovsrgammacorrection", vs.m_PlaceboVsrGammaCorrection);
 
   XMLUtils::SetFloat(pNode, "placebosdrsaturation", vs.m_PlaceboSdrSaturation);
   XMLUtils::SetBoolean(pNode, "placebosdrcolormapinversetonemapping", vs.m_PlaceboSdrColorMapInverseToneMapping);
@@ -1041,6 +1051,7 @@ bool CPLHelper::LoadLibplaceboSettings(CVideoSettings& vs, const TiXmlElement* p
   XMLUtils::GetFloat(pElement, "placebocontrastsdrhdr", vs.m_PlaceboContrastSdrHdr);
   XMLUtils::GetFloat(pElement, "placebobrightnesshdrsdr", vs.m_PlaceboBrightnessHdrSdr);
   XMLUtils::GetFloat(pElement, "placebocontrasthdrsdr", vs.m_PlaceboContrastHdrSdr);
+  XMLUtils::GetFloat(pElement, "placebovsrgammacorrection", vs.m_PlaceboVsrGammaCorrection);
 
   XMLUtils::GetFloat(pElement, "placebosdrsaturation", vs.m_PlaceboSdrSaturation);
   XMLUtils::GetBoolean(pElement, "placebosdrcolormapinversetonemapping", vs.m_PlaceboSdrColorMapInverseToneMapping);

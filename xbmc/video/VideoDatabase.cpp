@@ -5110,6 +5110,7 @@ static std::vector<std::string> LibplaceboColumnslist = {
 								   "PlaceboContrastHdrSdr",
 								   "PlaceboBrightnessSdrHdr",
 								   "PlaceboContrastSdrHdr",
+								   "PlaceboVsrGammaCorrection",
 								   "PlaceboColorAdjustmentEnabled",
 								   "PlaceboSaturation",
 								   "PlaceboSdrSaturation",
@@ -5456,6 +5457,7 @@ bool CVideoDatabase::AddLibplaceboColumnsToSettingsTable(int idFile, const CVide
 		if(list [i] == "PlaceboContrastHdrSdr") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboContrastHdrSdr                            float NOT NULL DEFAULT %f", vs.m_PlaceboContrastHdrSdr); m_pDS->exec(strSQL2); }
 		if(list [i] == "PlaceboBrightnessSdrHdr") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboBrightnessSdrHdr                        float NOT NULL DEFAULT %f", vs.m_PlaceboBrightnessSdrHdr); m_pDS->exec(strSQL2); }
 		if(list [i] == "PlaceboContrastSdrHdr") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboContrastSdrHdr                            float NOT NULL DEFAULT %f", vs.m_PlaceboContrastSdrHdr); m_pDS->exec(strSQL2); }
+		if(list [i] == "PlaceboVsrGammaCorrection") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboVsrGammaCorrection                    float NOT NULL DEFAULT %f", vs.m_PlaceboVsrGammaCorrection); m_pDS->exec(strSQL2); }
 
         if (list[i] == "PlaceboSdrSaturation") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboSdrSaturation                        float NOT NULL DEFAULT %f", vs.m_PlaceboSdrSaturation); m_pDS->exec(strSQL2); }
 		if (list[i] == "PlaceboSdrColorMapInverseToneMapping") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboSdrColorMapInverseToneMapping integer NOT NULL DEFAULT %i", vs.m_PlaceboSdrColorMapInverseToneMapping); m_pDS->exec(strSQL2); }
@@ -5694,6 +5696,7 @@ bool CVideoDatabase::GetVideoSettings(int idFile, CVideoSettings &settings)
 		settings.m_PlaceboContrastHdrSdr = m_pDS->fv("PlaceboContrastHdrSdr").get_asFloat();
 		settings.m_PlaceboBrightnessSdrHdr = m_pDS->fv("PlaceboBrightnessSdrHdr").get_asFloat();
 		settings.m_PlaceboContrastSdrHdr = m_pDS->fv("PlaceboContrastSdrHdr").get_asFloat();
+		settings.m_PlaceboVsrGammaCorrection = m_pDS->fv("PlaceboVsrGammaCorrection").get_asFloat();
 
 		settings.m_PlaceboSdrSaturation = m_pDS->fv("PlaceboSdrSaturation").get_asFloat();
 		settings.m_PlaceboSdrColorMapInverseToneMapping = m_pDS->fv("PlaceboSdrColorMapInverseToneMapping").get_asBool();
@@ -5911,7 +5914,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
           "SubtitleVerticalPosition=%i,PlaceboSkinZoom=%i,PlaceboSkinZoomPosition=%i,PlaceboLutFilename='%s',PlaceboDisplayHdrPeakLuminance=%f,PlaceboDisplaySdrPeakLuminance=%f,"
 		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
 		  "PlaceboFrameMixerRadiusFactor=%f,PlaceboFrameMixerBypassQueue=%i,PlaceboCropBottom=%i,PlaceboBrightnessSdrSdr=%f,PlaceboContrastSdrSdr=%f,PlaceboBrightnessHdrHdr=%f,PlaceboContrastHdrHdr=%f,PlaceboBrightnessHdrSdr=%f,PlaceboContrastHdrSdr=%f,PlaceboBrightnessSdrHdr=%f,PlaceboContrastSdrHdr=%f,"
-          "PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
+		  "PlaceboVsrGammaCorrection=%f,PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
 		  "PlaceboSdrColorMapIntent='%s',PlaceboSdrColorMapGamutMapping='%s',PlaceboSdrColorMapToneMapping='%s',PlaceboSdrToneConstantExposure=%f,PlaceboSdrToneConstantKneeAdaptation=%f,PlaceboSdrToneConstantKneeDefault=%f,PlaceboSdrToneConstantKneeMaximum=%f,"
 		  "PlaceboSdrToneConstantKneeMinimum=%f,PlaceboSdrToneConstantKneeOffset=%f,PlaceboSdrToneConstantLinearKnee=%f,PlaceboSdrToneConstantReinhardContrast=%f,PlaceboSdrToneConstantSlopeOffset=%f,"
 		  "PlaceboSdrToneConstantSlopeTuning=%f,PlaceboSdrToneConstantSplineContrast=%f,PlaceboSdrToneConstantParam0=%f,PlaceboSdrToneConstantParam1=%f,PlaceboSdrToneConstantParam2=%f,PlaceboSdrToneConstantParam3=%f,PlaceboSdrToneConstantParam4=%f,PlaceboSdrToneConstantParam5=%f,PlaceboSdrToneConstantParam6=%f,"
@@ -5966,6 +5969,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		  settings.m_PlaceboContrastHdrSdr,
 		  settings.m_PlaceboBrightnessSdrHdr,
 		  settings.m_PlaceboContrastSdrHdr,
+		  settings.m_PlaceboVsrGammaCorrection,
 		  settings.m_PlaceboDitherDepth,
 		  settings.m_PlaceboShaderApply,
 		  settings.m_PlaceboUseHdrForSdr,
@@ -6135,7 +6139,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		  "SubtitleVerticalPosition=%i,PlaceboSkinZoom=%i,PlaceboSkinZoomPosition=%i,PlaceboLutFilename='%s',PlaceboDisplayHdrPeakLuminance=%f,PlaceboDisplaySdrPeakLuminance=%f,"
 		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
 		  "PlaceboFrameMixerRadiusFactor=%f,PlaceboFrameMixerBypassQueue=%i,PlaceboCropBottom=%i,PlaceboBrightnessSdrSdr=%f,PlaceboContrastSdrSdr=%f,PlaceboBrightnessHdrHdr=%f,PlaceboContrastHdrHdr=%f,PlaceboBrightnessHdrSdr=%f,PlaceboContrastHdrSdr=%f,PlaceboBrightnessSdrHdr=%f,PlaceboContrastSdrHdr=%f,"
-		  "PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
+		  "PlaceboVsrGammaCorrection=%f,PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
 		  "PlaceboSdrColorMapIntent='%s',PlaceboSdrColorMapGamutMapping='%s',PlaceboSdrColorMapToneMapping='%s',PlaceboSdrToneConstantExposure=%f,PlaceboSdrToneConstantKneeAdaptation=%f,PlaceboSdrToneConstantKneeDefault=%f,PlaceboSdrToneConstantKneeMaximum=%f,"
 		  "PlaceboSdrToneConstantKneeMinimum=%f,PlaceboSdrToneConstantKneeOffset=%f,PlaceboSdrToneConstantLinearKnee=%f,PlaceboSdrToneConstantReinhardContrast=%f,PlaceboSdrToneConstantSlopeOffset=%f,"
 		  "PlaceboSdrToneConstantSlopeTuning=%f,PlaceboSdrToneConstantSplineContrast=%f,PlaceboSdrToneConstantParam0=%f,PlaceboSdrToneConstantParam1=%f,PlaceboSdrToneConstantParam2=%f,PlaceboSdrToneConstantParam3=%f,PlaceboSdrToneConstantParam4=%f,PlaceboSdrToneConstantParam5=%f,PlaceboSdrToneConstantParam6=%f,"
@@ -6190,6 +6194,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		  settings.m_PlaceboContrastHdrSdr,
 		  settings.m_PlaceboBrightnessSdrHdr,
 		  settings.m_PlaceboContrastSdrHdr,
+		  settings.m_PlaceboVsrGammaCorrection,
 		  settings.m_PlaceboDitherDepth,
 		  settings.m_PlaceboShaderApply,
 		  settings.m_PlaceboUseHdrForSdr,

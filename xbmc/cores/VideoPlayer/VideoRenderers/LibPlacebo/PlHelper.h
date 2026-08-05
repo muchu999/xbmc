@@ -74,6 +74,8 @@ namespace PL
 	void OnSwapchainEventReceived(const std::string& message);
 	void TeardownSwapchainCallback(DX::DeviceResources& publisher);
 	void InitGammaShader();
+	void SetGammaShaderGamma(float gamma);
+
 
 	pl_d3d11 GetD3d11() { return m_plD3d11; }
 	pl_swapchain GetSwapchain() { return m_plSwapchain; }

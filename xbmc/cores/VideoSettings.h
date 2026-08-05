@@ -401,6 +401,7 @@ public:
   float m_PlaceboContrastHdrSdr;
   float m_PlaceboContrastSdrHdr;
   float m_PlaceboContrastSdrSdr;
+  float m_PlaceboVsrGammaCorrection;
 
   bool m_PlaceboColorAdjustmentEnabled;
   float m_PlaceboSaturation;

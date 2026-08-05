@@ -143,6 +143,7 @@ void CVideoSettings::copy(const CVideoSettings& other)
   m_PlaceboContrastHdrSdr   = other.m_PlaceboContrastHdrSdr;
   m_PlaceboBrightnessSdrHdr = other.m_PlaceboBrightnessSdrHdr;
   m_PlaceboContrastSdrHdr   = other.m_PlaceboContrastSdrHdr;
+  m_PlaceboVsrGammaCorrection = other.m_PlaceboVsrGammaCorrection;
 
   // Shallow copy and deep copy of m_placeboOptions content
   if (m_placeboOptions && other.m_placeboOptions)
@@ -211,6 +212,7 @@ CVideoSettings::CVideoSettings()
   m_PlaceboContrastHdrSdr   = 50.0f;
   m_PlaceboBrightnessSdrHdr = 50.0f;
   m_PlaceboContrastSdrHdr   = 50.0f;
+  m_PlaceboVsrGammaCorrection = 1.0;
 
   m_PlaceboShadersEnabled = {};
   m_PlaceboShadersFilename = {};
@@ -391,6 +393,7 @@ bool CVideoSettings::operator!=(const CVideoSettings& right) const
   if(m_PlaceboContrastHdrSdr != right.m_PlaceboContrastHdrSdr) return true;
   if(m_PlaceboBrightnessSdrHdr != right.m_PlaceboBrightnessSdrHdr) return true;
   if(m_PlaceboContrastSdrHdr != right.m_PlaceboContrastSdrHdr) return true;
+  if(m_PlaceboVsrGammaCorrection != right.m_PlaceboVsrGammaCorrection) return true;
 
   if (m_PlaceboShadersEnabled != right.m_PlaceboShadersEnabled) return true;
   if (m_PlaceboShadersFilename != right.m_PlaceboShadersFilename) return true;

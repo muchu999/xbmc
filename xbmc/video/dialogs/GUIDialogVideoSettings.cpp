@@ -265,6 +265,7 @@ using namespace XFILE;
 #define SETTING_LIB_PLACEBO_CROP_BOTTOM                         "video.libplacebo.crop_bottom"
 #define SETTING_LIB_PLACEBO_BRIGHTNESS                          "video.libplacebo.brightness"
 #define SETTING_LIB_PLACEBO_CONTRAST                            "video.libplacebo.contrast"
+#define SETTING_LIB_PLACEBO_VSR_GAMMA_CORRECTION                "video.libplacebo.vsr_gamma_correction"
 
 #define CreateGroup(thegroup,thecategory) std::shared_ptr<CSettingGroup> thegroup = AddGroup(thecategory); if (thegroup == NULL) {CLog::Log(LOGERROR, "CGUIDialogLibplacebo: unable to setup settings");  return; }
 
@@ -875,6 +876,11 @@ void CGUIDialogVideoSettings::OnSettingChanged(const std::shared_ptr<const CSett
 	  vs.m_PlaceboContrastSdrSdr = std::round(val * 50.0) * 0.02;
 	appPlayer->SetVideoSettings(vs);
 	}
+  else if(settingId == SETTING_LIB_PLACEBO_VSR_GAMMA_CORRECTION)
+  {
+	vs.m_PlaceboVsrGammaCorrection = static_cast<float>(std::static_pointer_cast<const CSettingNumber>(setting)->GetValue());
+	appPlayer->SetVideoSettings(vs);
+  }
   else if (settingId == SETTING_LIB_PLACEBO_DEINTERLACE_ENABLED)
   {
 	vs.m_PlaceboDeinterlaceEnabled = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
@@ -1955,6 +1961,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_SUPER_RESOLUTION_ENABLED, 55386, SettingLevel::Basic, videoSettings.m_PlaceboNvSuperResolutionEnabled);
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_HDR_ENABLED, 55387, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxHdrEnabled);
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS, 55389, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxDisableScalers);
+	AddSlider(groupOptions, SETTING_LIB_PLACEBO_VSR_GAMMA_CORRECTION, 55393, SettingLevel::Basic, videoSettings.m_PlaceboVsrGammaCorrection, "{0:5.3f}", (float) 0.5, (float) .001, (float) 2.0, 55393, usePopup);
 
 	entries.clear();
 	entries.emplace_back(55315, static_cast<int>(SettinglibPlaceboTargetColorspaceHint::AUTO));

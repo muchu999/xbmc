@@ -25737,4 +25737,8 @@ msgctxt "#55392"
 msgid "On"
 msgstr ""
 
+msgctxt "#55393"
+msgid "VSR gamma correction"
+msgstr ""
+
 
