@@ -2050,7 +2050,9 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
   bool bUseNvRtxHdr;
   bool bUseNvSuperResolution;
   CheckNvRtxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
-  bool bShouldEnable = (m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::YES) || ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO) && (bUseNvRtxHdr || bUseNvSuperResolution));
+  bool bShouldEnable = ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::YES) || ((m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO) && (bUseNvRtxHdr || bUseNvSuperResolution)))
+	                   && (m_videoSettings.m_PlaceboFrameMixer == -1)
+					   && m_videoSettings.m_PlaceboFrameMixerBypassQueue;
   if(m_RtxVideoProcessor.IsRtxPipelineViable() && bShouldEnable)
   {
 	// Pipeline should be enabled
@@ -2075,18 +2077,9 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	}
 	else if(!m_RtxVideoProcessor.IsRtxPipelineEnabled())
 	{
-	  // Pipeline already initialized but not enabled, check if we should
-	  bool bUseNvRtxHdr;
-	  bool bUseNvSuperResolution;
-	  CheckNvRtxStatus(bUseNvRtxHdr, bUseNvSuperResolution);
-
-	  if(bShouldEnable)
+	  // Pipeline already initialized but not enabled, now impossible after changes, to remove
 	  {
-		m_RtxVideoProcessor.EnablePipeline();
-
-		CRendererPL::OnRtxSettingChanged();
-		m_RtxVideoProcessor.FlushHistoryQueue();
-		ClearBuffer(buffer);
+		CLog::LogF(LOGDEBUG, "Rtx pipeline wrong state");
 	  }
 	}
   }
@@ -2094,7 +2087,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
   {
 	// Pipeline should not be enabled but it is, flush queue and check if we should destroy it
 	m_RtxVideoProcessor.FlushHistoryQueue();
-	if(m_videoSettings.m_PlaceboNvRtxPipelineEnabled == (int) SettinglibPlaceboNvRtxPipelineEnabled::NO)
+	if(m_videoSettings.m_PlaceboNvRtxPipelineEnabled != (int) SettinglibPlaceboNvRtxPipelineEnabled::YES)
 	{
 	  m_RtxVideoProcessor.DisablePipeline();
 
