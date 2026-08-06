@@ -150,6 +150,7 @@ public:
 
   bool CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height);
   bool CreateTempTarget(unsigned int width, unsigned int height);
+  DXGI_FORMAT GetDXGIFormat(AVPixelFormat format);
   void UpdateVideoFilters() override;
   bool NeedBuffer(int idx) override;
   CRenderInfo GetRenderInfo() override;
@@ -204,7 +205,8 @@ private:
   CD3DTexture m_TempTarget;
   Microsoft::WRL::ComPtr < ID3D11VideoProcessorOutputView> m_pTempTargetView;
   CD3DTexture m_SoftwareUploadTexture;
-  
+  CD3DTexture m_SoftwareUploadStagingTexture;
+
   static inline bool m_bHdrIn;
   static inline bool m_bHdrOut;
   pl_color_space m_colorSpace;
@@ -323,9 +325,11 @@ public:
 
   //sw upload
   bool UploadPlanes();
-  //When decoded with d3d11va
+  bool UploadToTexture(CD3DTexture& texture);
+
+	//When decoded with d3d11va
   bool UploadWrapPlanes();
   //move those to the video codec if linux start to use libplacebo
 private:
-}; 
+};
 

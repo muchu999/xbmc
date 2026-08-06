@@ -47,6 +47,8 @@
 #include <vector>
 #include <utility>
 #include <d3dcompiler.h>
+#include <ppl.h>
+#include <utils/memcpy_sse2.h>
 
 using namespace XFILE;
 using namespace Microsoft::WRL;
@@ -456,10 +458,28 @@ void CRendererPL::CheckVideoParameters()
   CreateIntermediateTarget(m_viewWidth, m_viewHeight, false, DXGI_FORMAT_UNKNOWN, bUseUnordered); //cl DXGI_FORMAT_R10G10B10A2_UNORM);
 }
 
+DXGI_FORMAT CRendererPL::GetDXGIFormat(AVPixelFormat format)
+{
+  switch(format)
+  {
+  case AV_PIX_FMT_NV12:
+  case AV_PIX_FMT_YUV420P:
+	return DXGI_FORMAT_NV12;
+  case AV_PIX_FMT_P010:
+  case AV_PIX_FMT_YUV420P10:
+	return DXGI_FORMAT_P010;
+  case AV_PIX_FMT_P016:
+  case AV_PIX_FMT_YUV420P16:
+	return DXGI_FORMAT_P016;
+  default:
+	return DXGI_FORMAT_UNKNOWN;
+  }
+}
+
 bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned int width, unsigned int height)
 {
-  unsigned int w = width; // FFALIGN(width, 128);// align to 128 solved garbled output for 1792x1080
-  unsigned int h = height;//FFALIGN(height, 128);
+  unsigned int w = FFALIGN(width, 32);
+  unsigned int h = FFALIGN(height, 32);
   bool bUseUnordered = !m_videoSettings.m_placeboOptions->getPlOptions()->params.skip_target_clearing ? true : false;
 
   if(m_SoftwareUploadTexture.Get() && m_SoftwareUploadTexture.GetWidth() == w && m_SoftwareUploadTexture.GetHeight() == h)
@@ -467,7 +487,12 @@ bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned i
   
   if(m_SoftwareUploadTexture.Get())
 	m_SoftwareUploadTexture.Release();
+  if(m_SoftwareUploadStagingTexture.Get())
+	m_SoftwareUploadStagingTexture.Release();
 
+  const auto format = GetDXGIFormat(pBuf->videoBuffer->GetFormat());
+
+  #if 0
   DXGI_FORMAT format;
   if(pBuf->pictureFlags & DVP_FLAG_INTERLACED)
   {
@@ -478,8 +503,27 @@ bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned i
   {
 	format = DXGI_FORMAT_P010;
   }
+#endif
 
   CD3D11_TEXTURE2D_DESC textureDesc;
+  textureDesc.Width = w;
+  textureDesc.Height = h;
+  textureDesc.Format = format;
+  textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+  textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE; // | D3D11_BIND_RENDER_TARGET;
+  textureDesc.MipLevels = 1;
+  textureDesc.MiscFlags = 0;
+  textureDesc.ArraySize = 1;
+  textureDesc.Usage = D3D11_USAGE_DYNAMIC;
+  textureDesc.SampleDesc.Count = 1;
+  textureDesc.SampleDesc.Quality = 0;
+  if(!m_SoftwareUploadStagingTexture.Create(textureDesc))
+  {
+	CLog::LogF(LOGERROR, "SoftwareUploadStagingTexture creation failed.");
+	return false;
+  }
+  CLog::LogF(LOGDEBUG, "creating SoftwareUploadStagingTexture {}x{} format {}.", w, h, DX::DXGIFormatToString(format));
+
   textureDesc.Width = w;
   textureDesc.Height = h;
   textureDesc.Format = format;
@@ -496,8 +540,6 @@ bool CRendererPL::CreateSoftwareUploadTarget(CRenderBufferImpl* pBuf, unsigned i
 	CLog::LogF(LOGERROR, "SoftwareUploadTexture creation failed.");
 	return false;
   }
-  CLog::LogF(LOGDEBUG, "Multi-planar P010 subresource UAV pointers linked successfully.");
-
   CLog::LogF(LOGDEBUG, "creating SoftwareUploadTexture {}x{} format {}.", w, h, DX::DXGIFormatToString(format));
   return true;
 }
@@ -1081,9 +1123,7 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	// Update processor sizes if required
 	D3D11_TEXTURE2D_DESC srcDesc, destDesc;
 	pTexture->GetDesc(&srcDesc);
-	//m_RtxVideoProcessor.EnsureProcessorSize(srcDesc.Width, srcDesc.Height, buffer->pictureFlags, m_viewWidth, m_viewHeight);
 	m_RtxVideoProcessor.EnsureProcessorSize(srcRect.right- srcRect.left, srcRect.bottom - srcRect.top, buffer->pictureFlags, destRect.right - destRect.left, destRect.bottom - destRect.top);
-
 
 	RECT streamDestRect = destRect;
 	m_RtxVideoProcessor.m_pVideoContext->VideoProcessorSetStreamSourceRect(m_RtxVideoProcessor.m_pVideoProcessor.Get(), 0, TRUE, &srcRect);
@@ -1104,6 +1144,11 @@ void CRendererPL::RenderDx(CD3DTexture& target, CRect& sourceRect, CPoint(&destP
 	if(FAILED(hr))
 	{
 	  CLog::LogF(LOGERROR, "CreateVideoProcessorInputView failed");
+	  if(pMultithread)
+	  {
+		pMultithread->Leave();
+	  }
+
 	  return;
 	}
 
@@ -2097,6 +2142,7 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 
 	  m_TempTarget.Release();
 	  m_SoftwareUploadTexture.Release();
+	  m_SoftwareUploadStagingTexture.Release();
 	  m_RtxVideoProcessor.UninitializePipeline();
 	}
   }
@@ -2203,102 +2249,12 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	{
 	  ID3D11DeviceContext* pDeviceContext = nullptr;
 	  DX::DeviceResources::Get()->GetD3DDevice()->GetImmediateContext(&pDeviceContext);
-
-	  // Init libplacebo render params for "decoded frame to uploaded frame" conversion
-	  static bool bInit = false;
-	  static pl_options placeboOptions = pl_options_alloc(NULL);  // Initialized to fast by defaults
-	  if(!bInit)
+	  if(!buf->UploadToTexture(m_SoftwareUploadStagingTexture))
 	  {
-		bInit = true;
-		// Registers the cleanup function to run automatically at exit
-		std::atexit([]() { pl_options_free(&placeboOptions); });
-	  }
-
-	  if(!m_SoftwareUploadTexture.Get())
-	  {
+		CLog::LogF(LOGERROR, "UploadToTexture failed");
 		return false;
 	  }
-
-	  // Upload planes to GPU
-	  buf->UploadPlanes();
-
-	  // Initialize frame IN and OUT for conversion
-	  pl_frame frameIn = {0};
-	  pl_frame frameOut = {0};
-	  pl_render_params params;
-	  InitializeFrameInFieldsMix(&frameIn, buf);
-	  frameIn.color.primaries = buf->m_ColorSpace.primaries;
-	  frameIn.color.transfer = buf->m_ColorSpace.transfer;
-	  frameIn.field = PL_FIELD_NONE;
-	  frameIn.first_field = PL_FIELD_NONE;
-
-	  //CRendererPL::InitializeFrame(PL::PLInstance::Get()->GetSwapchain(), frameOut);
-	  //frameOut.color.primaries = PL_COLOR_PRIM_BT_709;  
-	  //frameOut.color.transfer = PL_COLOR_TRC_BT_1886;
-	  //frameOut.repr.levels = PL_COLOR_LEVELS_LIMITED;
-      //frameOut.repr.bits.color_depth = 10;
-	  //frameOut.repr.bits.sample_depth = 16;
-	  //frameOut.repr.bits.bit_shift = 6;   // The mandatory P010 6-bit left shift!
-	  frameOut.color.primaries = buf->m_ColorSpace.primaries;
-	  frameOut.color.transfer = buf->m_ColorSpace.transfer; //PL_COLOR_TRC_GAMMA24; //buf->m_ColorSpace.transfer;
-	  frameOut.repr.sys = frameIn.repr.sys;
-	  frameOut.repr.levels = frameIn.repr.levels;
-
-	  frameOut.color = frameIn.color;
-	  frameOut.repr = frameOut.repr;
-	  // Get format of output m_SoftwareUploadTexture
-	  D3D11_TEXTURE2D_DESC desc;
-	  m_SoftwareUploadTexture.Get()->GetDesc(&desc);
-	  PL::pl_d3d_format format;
-	  pl_tex tex;
-	  PL::PLInstance::Get()->fill_d3d_format(&format, desc.Format);
-
-	  // Wrap the planes of m_SoftwareUploadTexture
-	  frameOut.num_planes = format.num_planes;
-	  for(int i = 0; i < format.num_planes; i++)
-	  {
-		pl_d3d11_wrap_params params = {};
-		params.tex = m_SoftwareUploadTexture.Get();
-		params.w = desc.Width / format.width_div [i];
-		params.h = desc.Height / format.height_div [i];
-		params.fmt = format.planes [i];
-		params.array_slice = 0;
-		tex = pl_d3d11_wrap(PL::PLInstance::Get()->GetGpu(), &params);
-
-		if(!tex)
-		  return false;
-
-		frameOut.planes [i].texture = tex;
-		frameOut.planes [i].components = format.components [i];
-		for(int j = 0; j < 4; j++)
-		  frameOut.planes [i].component_mapping [j] = format.component_mapping [i][j];
-	  }
-
-	  // Crop input to texture size
-	  frameIn.crop.x0 = 0;
-	  frameIn.crop.x1 = m_SoftwareUploadTexture.GetWidth();
-	  frameIn.crop.y0 = 0;
-	  frameIn.crop.y1 = m_SoftwareUploadTexture.GetHeight();
-	  //frameOut.rotation = PL_ROTATION_0;
-
-	  // Convert image
-	  Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
-	  if(SUCCEEDED(pDeviceContext->QueryInterface(IID_PPV_ARGS(&pMultithread)))) { pMultithread->Enter();}
-	  bool res = pl_render_image(PL::PLInstance::Get()->GetRenderer(), &frameIn, &frameOut, &placeboOptions->params);
-	  if(pMultithread) { pMultithread->Leave(); }
-
-	  // Destroy placebo input picture wraps
-	  int nPlanes = av_pix_fmt_count_planes(buf->videoBuffer->GetFormat());
-	  for(int i = 0; i < nPlanes; i++)
-	  {
-		pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &buf->pltex [i]);
-	  }
-
-	  // Destroy placebo m_SoftwareUploadTexture wraps, no need for it since frame mixing not supported
-	  for(int i = 0; i < format.num_planes; i++)
-	  {
-		pl_tex_destroy(PL::PLInstance::Get()->GetGpu(), &frameOut.planes [i].texture);
-	  }
+	  pDeviceContext->CopyResource(m_SoftwareUploadTexture.Get(), m_SoftwareUploadStagingTexture.Get());
 
 	  // Wrap the blit output texture
 	  pl_d3d11_wrap_params params2 = {};
@@ -2327,7 +2283,6 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 		PL::PLInstance::Get()->fill_d3d_format(&buf->plFormat, m_TempTargetDxgiFormat);
 	  }
 
-
 	  return buf->SetLoaded();
 	}
 	else
@@ -2335,6 +2290,77 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
 	  return buf->UploadPlanes();
 	}
   }
+}
+
+bool CRendererPL::CRenderBufferImpl::UploadToTexture(CD3DTexture& texture)
+{
+  D3D11_MAPPED_SUBRESOURCE rect;
+  if(!texture.LockRect(0, &rect, D3D11_MAP_WRITE_DISCARD))
+	return false;
+
+  // destination
+  uint8_t* pData = static_cast<uint8_t*>(rect.pData);
+  uint8_t* dst [] = {pData, pData + texture.GetHeight() * rect.RowPitch};
+  int dstStride [] = {static_cast<int>(rect.RowPitch), static_cast<int>(rect.RowPitch)};
+
+  // source
+  uint8_t* src [3];
+  int srcStrides [3];
+  videoBuffer->GetPlanes(src);
+  videoBuffer->GetStrides(srcStrides);
+
+  const unsigned width = m_width;
+  const unsigned height = m_height;
+
+  const AVPixelFormat buffer_format = videoBuffer->GetFormat();
+  // copy to texture
+  if(buffer_format == AV_PIX_FMT_NV12 ||
+	buffer_format == AV_PIX_FMT_P010 ||
+	buffer_format == AV_PIX_FMT_P016)
+  {
+	Concurrency::parallel_invoke([&]() {
+	  // copy Y
+	  copy_plane(src [0], srcStrides [0], height, width, dst [0], dstStride [0]);
+	  }, [&]() {
+		// copy UV
+		copy_plane(src [1], srcStrides [1], height >> 1, width, dst [1], dstStride [1]);
+		});
+	  // copy cache size of UV line again to fix Intel cache issue
+	  copy_plane(src [1], srcStrides [1], 1, 32, dst [1], dstStride [1]);
+  }
+  // convert 8bit
+  else if(buffer_format == AV_PIX_FMT_YUV420P)
+  {
+	Concurrency::parallel_invoke([&]() {
+	  // copy Y
+	  copy_plane(src [0], srcStrides [0], height, width, dst [0], dstStride [0]);
+	  }, [&]() {
+		// convert U+V -> UV
+		convert_yuv420_nv12_chrome(&src [1], &srcStrides [1], height, width, dst [1], dstStride [1]);
+		});
+	  // copy cache size of UV line again to fix Intel cache issue
+	  // height and width multiplied by two because they will be divided by func
+	  convert_yuv420_nv12_chrome(&src [1], &srcStrides [1], 2, 64, dst [1], dstStride [1]);
+  }
+  // convert 10/16bit
+  else if(buffer_format == AV_PIX_FMT_YUV420P10 ||
+	buffer_format == AV_PIX_FMT_YUV420P16)
+  {
+	const uint8_t bpp = buffer_format == AV_PIX_FMT_YUV420P10 ? 10 : 16;
+	Concurrency::parallel_invoke([&]() {
+	  // copy Y
+	  copy_plane(src [0], srcStrides [0], height, width, dst [0], dstStride [0], bpp);
+	  }, [&]() {
+		// convert U+V -> UV
+		convert_yuv420_p01x_chrome(&src [1], &srcStrides [1], height, width, dst [1], dstStride [1], bpp);
+		});
+	  // copy cache size of UV line again to fix Intel cache issue
+	  // height multiplied by two because it will be divided by func
+	  convert_yuv420_p01x_chrome(&src [1], &srcStrides [1], 2, 32, dst [1], dstStride [1], bpp);
+  }
+
+  m_bLoaded = texture.UnlockRect(0);
+  return m_bLoaded;
 }
 
 bool CRendererPL::CRenderBufferImpl::UploadPlanes()
@@ -2488,15 +2514,13 @@ bool CRTXVideoProcessor::EnsureProcessorSize(UINT inW, UINT inH, unsigned int iF
   CLog::LogF(LOGDEBUG, "RTX Processor: Re-creating pipeline. Input: {}x{}, Output: {}x{}", inW, inH, outW, outH);
 
   // Reset old interfaces to avoid memory leaks
-  m_pVideoProcessor.Reset();
-  m_pVideoEnumerator.Reset();
-  m_pVideoContext.Reset();
-  m_pVideoDevice.Reset();
-  m_bInitialized = false;
+  UninitializePipeline();
+  if(!InitializePipeline(inW, inH, iFlags, outW, outH))
+  {
+	CLog::LogF(LOGERROR, "RTX Processor: Re-creating pipeline failed");
+	return false;
+  }
 
-  InitializePipeline(inW, inH, iFlags, outW, outH);
-
-  m_bInitialized = true;
   return true;
 }
 
@@ -2570,14 +2594,20 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   ID3D11VideoProcessorEnumerator* pVideoProcessorEnumerator = nullptr;
   hr = m_pVideoDevice->CreateVideoProcessorEnumerator(&desc, m_pVideoEnumerator.GetAddressOf());
   if(FAILED(hr)) 
+  {
+	CLog::LogF(LOGERROR, "CreateVideoProcessorEnumerator failed: {}", hr);
 	return false;
+  }
   
   //GetProcessorFormats(true, true);
   // 
   // Get video context
   hr = pImmediateContext->QueryInterface(__uuidof(ID3D11VideoContext), reinterpret_cast<void**>(m_pVideoContext.GetAddressOf()));
   if(FAILED(hr)) 
+  {
+	CLog::LogF(LOGERROR, "QueryInterface failed: {}", hr);
 	return false;
+  }
 
   // Check how many past and future reference frames the NVIDIA driver needs
   D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS rateCaps = {};
@@ -2593,7 +2623,10 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   // Create/configure the Video Processor
   hr = m_pVideoDevice->CreateVideoProcessor(m_pVideoEnumerator.Get(), 0, m_pVideoProcessor.GetAddressOf());
   if(FAILED(hr)) 
+  {
+	CLog::LogF(LOGERROR, "CreateVideoProcessor failed: {}", hr);
 	return false;
+  }
 
   m_pVideoContext->VideoProcessorSetStreamAutoProcessingMode(m_pVideoProcessor.Get(), 0, FALSE);
   m_pVideoContext->VideoProcessorSetStreamOutputRate(m_pVideoProcessor.Get(), 0, D3D11_VIDEO_PROCESSOR_OUTPUT_RATE_NORMAL, FALSE, 0);
@@ -2768,7 +2801,7 @@ bool CRTXVideoProcessor::ExecuteBlit(ID3D11VideoProcessorInputView* pInputView, 
 	if(hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 	{
 	  CLog::LogF(LOGFATAL, "RTX Processor: Graphics hardware device lost. Disabling RTX processing.");
-	  m_bInitialized = false;
+	  UninitializePipeline();
 	}
   }
 
