@@ -103,8 +103,8 @@ public:
 
   void Release();
   bool GetDesc(D3D11_TEXTURE2D_DESC *desc) const;
-  bool LockRect(UINT subresource, D3D11_MAPPED_SUBRESOURCE *res, D3D11_MAP mapType) const;
-  bool UnlockRect(UINT subresource) const;
+  bool LockRect(UINT subresource, D3D11_MAPPED_SUBRESOURCE *res, D3D11_MAP mapTypebool, bool bImmediate = true) const;
+  bool UnlockRect(UINT subresource, bool bImmediate = true) const;
 
   // Accessors
   ID3D11Texture2D* Get() const { return m_texture.Get(); }

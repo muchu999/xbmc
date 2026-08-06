@@ -139,7 +139,7 @@ void CDXTexture::LoadToGPU()
   {
     D3D11_MAP mapType = (usage == D3D11_USAGE_STAGING) ? D3D11_MAP_WRITE : D3D11_MAP_WRITE_DISCARD;
     D3D11_MAPPED_SUBRESOURCE lr;
-    if (m_texture.LockRect(0, &lr, mapType))
+    if (m_texture.LockRect(0, &lr, mapType, false))  //cl deferred
     {
       unsigned char *dst = (unsigned char *)lr.pData;
       unsigned char *src = m_pixels;
@@ -183,7 +183,7 @@ void CDXTexture::LoadToGPU()
     {
       CLog::LogF(LOGERROR, "failed to lock texture.");
     }
-    m_texture.UnlockRect(0);
+    m_texture.UnlockRect(0, false);
     if (usage != D3D11_USAGE_STAGING && IsMipmapped())
       m_texture.GenerateMipmaps();
   }
