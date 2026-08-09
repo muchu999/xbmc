@@ -1740,7 +1740,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
   auto appPlayer = components.GetComponent<CApplicationPlayer>();
   CVideoSettings videoSettings = appPlayer->GetVideoSettings();
 
-  if (renderMethod == RENDER_METHOD_LIBPLACEBO)
+  if(appPlayer->Supports(RENDERFEATURE_LIBPLACEBO))
   {
 	VideoStreamInfo info;
 	appPlayer->GetVideoStreamInfo(appPlayer->GetVideoStream(), info);
@@ -1789,7 +1789,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
   TranslatableIntegerSettingOptions entries;
 
   // cl not sure how to handle interlacing...
-  if (renderMethod == RENDER_METHOD_LIBPLACEBO)
+  if(appPlayer->Supports(RENDERFEATURE_LIBPLACEBO))
   {
   }
   else
@@ -1878,13 +1878,13 @@ void CGUIDialogVideoSettings::InitializeSettings()
   if (appPlayer->Supports(RENDERFEATURE_PIXEL_RATIO))
 	AddSlider(groupVideo, SETTING_VIDEO_PIXEL_RATIO, 217, SettingLevel::Basic,
 	  videoSettings.m_CustomPixelRatio, "{:2.3f}", 0.5f, 0.01f, 2.0f, 217, usePopup);
-  if(renderMethod == RENDER_METHOD_LIBPLACEBO)
+  if(appPlayer->Supports(RENDERFEATURE_LIBPLACEBO))
 	AddSlider(groupVideo, SETTING_LIB_PLACEBO_CROP_BOTTOM, 55367, SettingLevel::Basic, videoSettings.m_PlaceboCropBottom, -1, 0, 1, 50, 55367);
 
   AddList(groupVideo, SETTING_VIDEO_ORIENTATION, 21843, SettingLevel::Basic, videoSettings.m_Orientation, CGUIDialogVideoSettings::VideoOrientationFiller, 21843);
 
   if (appPlayer->Supports(RENDERFEATURE_POSTPROCESS))    AddToggle(groupVideo, SETTING_VIDEO_POSTPROCESS, 16400, SettingLevel::Basic, videoSettings.m_PostProcess);
-  if (renderMethod != RENDER_METHOD_LIBPLACEBO)
+  if(!appPlayer->Supports(RENDERFEATURE_LIBPLACEBO))
   {
 	if (appPlayer->Supports(RENDERFEATURE_BRIGHTNESS))     AddPercentageSlider(groupVideo, SETTING_VIDEO_BRIGHTNESS, 464, SettingLevel::Basic, static_cast<int>(videoSettings.m_Brightness), 14047, 1, 464, usePopup);
 	if (appPlayer->Supports(RENDERFEATURE_CONTRAST))       AddPercentageSlider(groupVideo, SETTING_VIDEO_CONTRAST, 465, SettingLevel::Basic, static_cast<int>(videoSettings.m_Contrast), 14047, 1, 465, usePopup);
@@ -1925,7 +1925,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
 
   // libplacebo settings
 
-  if (renderMethod == RENDER_METHOD_LIBPLACEBO)
+  if(appPlayer->Supports(RENDERFEATURE_LIBPLACEBO))
   {
 	entries.clear();
 	entries.emplace_back(55358, VS_SZ_POSITION_UPPER_LEFT);
