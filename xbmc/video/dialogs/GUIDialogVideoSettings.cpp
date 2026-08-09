@@ -1733,9 +1733,6 @@ void CGUIDialogVideoSettings::InitializeSettings()
   bool bHdr = true;
   CGUIDialogSettingsManualBase::InitializeSettings();
 
-  int renderMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_RENDERMETHOD);
-
-
   auto& components = CServiceBroker::GetAppComponents();
   auto appPlayer = components.GetComponent<CApplicationPlayer>();
   CVideoSettings videoSettings = appPlayer->GetVideoSettings();
