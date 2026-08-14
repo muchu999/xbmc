@@ -58,6 +58,7 @@ void CDebugRenderer::Dispose()
   }
 }
 
+#define addSub(x,y,z)  if(x != "")  m_adapter->AddSubtitle(x,y,z);
 void CDebugRenderer::SetInfo(DEBUG_INFO_PLAYER& info, bool bFlush)
 {
   if (!m_isInitialized)
@@ -70,16 +71,17 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_PLAYER& info, bool bFlush)
   // without use all these fixed values.
   if(bFlush)
 	m_adapter->FlushSubtitles();
-  m_adapter->AddSubtitle(info.audio, 0., 5000000.);
-  m_adapter->AddSubtitle(info.video, 0., 5000000.);
-  m_adapter->AddSubtitle(info.player, 0., 5000000.);
-  m_adapter->AddSubtitle(info.vsync, 0., 5000000.);
-  m_adapter->AddSubtitle(info.jitter1, 0., 5000000.);
-  m_adapter->AddSubtitle(info.jitter2, 0., 5000000.);
+  addSub(info.audio, 0., 5000000.);
+  addSub(info.video, 0., 5000000.);
+  addSub(info.player, 0., 5000000.);
+  addSub(info.vsync, 0., 5000000.);
+  addSub(info.jitter1, 0., 5000000.);
+  addSub(info.jitter2, 0., 5000000.);
 }
 
 void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render, bool bFlush)
 {
+
   if (!m_isInitialized)
     return;
 
@@ -90,27 +92,25 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render,
   // without use all these fixed values.
   if(bFlush)
 	m_adapter->FlushSubtitles();
+
   std::string dummy = "-";
-  m_adapter->AddSubtitle(dummy, 0., 5000000.);
-  m_adapter->AddSubtitle(video.videoSource, 0., 5000000.);
-  m_adapter->AddSubtitle(video.metaPrim, 0., 5000000.);
-  m_adapter->AddSubtitle(video.metaLight, 0., 5000000.);
-  m_adapter->AddSubtitle(render.renderFlags, 0., 5000000.);
-  m_adapter->AddSubtitle(render.videoOutput, 0., 5000000.);
-  m_adapter->AddSubtitle(video.shader, 0., 5000000.);
-  m_adapter->AddSubtitle(dummy, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render1, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render2, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render3, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render4, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render5, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render6, 0., 5000000.);
-  m_adapter->AddSubtitle(render.queue, 0., 5000000.);
-  m_adapter->AddSubtitle(render.judder, 0., 5000000.);
-  m_adapter->AddSubtitle(render.guiComposeTime, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render7, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render8, 0., 5000000.);
-  m_adapter->AddSubtitle(video.render9, 0., 5000000.);
+  addSub(dummy, 0., 5000000.);
+  addSub(render.renderFlags, 0., 5000000.);
+  addSub(render.videoOutput, 0., 5000000.);
+  addSub(video.shader, 0., 5000000.);
+  addSub(dummy, 0., 5000000.);
+  addSub(video.render1, 0., 5000000.);
+  addSub(video.render2, 0., 5000000.);
+  addSub(video.render3, 0., 5000000.);
+  addSub(video.render4, 0., 5000000.);
+  addSub(video.render5, 0., 5000000.);
+  addSub(video.render6, 0., 5000000.);
+  addSub(render.queue, 0., 5000000.);
+  addSub(render.judder, 0., 5000000.);
+  addSub(render.guiComposeTime, 0., 5000000.);
+  addSub(video.render7, 0., 5000000.);
+  addSub(video.render8, 0., 5000000.);
+  addSub(video.render9, 0., 5000000.);
 }
 
 void CDebugRenderer::Render(CRect& src, CRect& dst, CRect& view)
