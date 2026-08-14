@@ -76,13 +76,6 @@
           <control type="toggle" />
         </setting>
 		<setting id="videoplayer.presentmode" type="integer" label="55384" help="55385">
-		  <requirement>HasLibplacebo</requirement>
-		  <dependencies>
-			<dependency type="enable">
-			  <condition setting="videoplayer.rendermethod" operator="is">5</condition>
-			  <!-- RENDER_METHOD_LIBPLACEBO -->
-			</dependency>
-		  </dependencies>
 		  <level>1</level>
 		  <default>0</default>
 		  <constraints>
