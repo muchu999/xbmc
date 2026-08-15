@@ -866,6 +866,7 @@ void DX::DeviceResources::DestroySwapChain()
 
 void DX::DeviceResources::ResizeBuffers()
 {
+  EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
   CLog::LogF(LOGDEBUG, "enter");
   if (!m_bDeviceCreated)
     return;
@@ -897,7 +898,6 @@ void DX::DeviceResources::ResizeBuffers()
 	m_bIsTearingDown = true;
 
 	m_swapChain->GetDesc1(&scDesc);
-	EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
 	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
 	  hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width), lround(m_outputSize.Height), scDesc.Format, (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT);
 	else
@@ -976,7 +976,6 @@ void DX::DeviceResources::ResizeBuffers()
     swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     swapChainDesc.Stereo = bHWStereoEnabled;
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
 #ifdef TARGET_WINDOWS_DESKTOP
 	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
 	  swapChainDesc.BufferCount = 3; 
@@ -1042,22 +1041,26 @@ void DX::DeviceResources::ResizeBuffers()
 	{
 	  StartPresentThread();
 	  StartWatchdog();
+	  IDXGISwapChain2* swapChain2 = nullptr;
+	  HRESULT hr = swapChain->QueryInterface(__uuidof(IDXGISwapChain2), (void**) &swapChain2);
+	  if(SUCCEEDED(hr) && swapChain2)
+	  {
+		ComPtr<IDXGIDevice1> dxgiDevice;
+		hr = m_d3dDevice.As(&dxgiDevice); CHECK_ERR();
+		HRESULT hr = swapChain2->SetMaximumFrameLatency(1);
+		swapChain2->GetContainingOutput(&m_pActiveOutput);
+		swapChain2->Release();
+	  }
 	}
 	else
 	{
 	  StopPresentThread();
 	  StopWatchdog();
-	}
-
-	IDXGISwapChain2* swapChain2 = nullptr;
-	HRESULT hr = swapChain->QueryInterface(__uuidof(IDXGISwapChain2), (void**) &swapChain2);
-	if(SUCCEEDED(hr) && swapChain2)
-	{
+	  // Ensure that DXGI does not queue more than one frame at a time. This both reduces latency and
+	  // ensures that the application will only render after each VSync, minimizing power consumption.
 	  ComPtr<IDXGIDevice1> dxgiDevice;
 	  hr = m_d3dDevice.As(&dxgiDevice); CHECK_ERR();
-      HRESULT hr = swapChain2->SetMaximumFrameLatency(1);
-	  swapChain2->GetContainingOutput(&m_pActiveOutput);
-	  swapChain2->Release();
+	  dxgiDevice->SetMaximumFrameLatency(1);
 	}
 
 	m_IsHDROutput = (swapChainDesc.Format == DXGI_FORMAT_R10G10B10A2_UNORM) && isHdrEnabled;
@@ -1083,11 +1086,6 @@ void DX::DeviceResources::ResizeBuffers()
       CLog::LogFC(LOGDEBUG, LOGVIDEO, "Color spaces supported by the swap chain:{}", colorSpaces);
     }
 
-    // Ensure that DXGI does not queue more than one frame at a time. This both reduces latency and
-    // ensures that the application will only render after each VSync, minimizing power consumption.
-    //ComPtr<IDXGIDevice1> dxgiDevice;
-    //hr = m_d3dDevice.As(&dxgiDevice); CHECK_ERR();
-    //  dxgiDevice->SetMaximumFrameLatency(1);
 
     if (m_IsHDROutput)
       SetHdrColorSpace(DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
@@ -1121,10 +1119,14 @@ void DX::DeviceResources::CreateWindowSizeDependentResources()
   m_bIsTearingDown = false;
   NotifySwapchainListeners("CreateSwapChain");
 
-  Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
-  if(SUCCEEDED(m_d3dContext.As(&pMultithread)))
+  EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
+  if(presentMode == VS_PRESENTMODE_MULTITHREADED)
   {
-	pMultithread->SetMultithreadProtected(TRUE);
+	Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
+    if(SUCCEEDED(m_d3dContext.As(&pMultithread)))
+    {
+	  pMultithread->SetMultithreadProtected(TRUE);
+    }
   }
   CLog::LogF(LOGDEBUG, "exit");
 }
