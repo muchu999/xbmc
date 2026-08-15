@@ -897,10 +897,11 @@ void DX::DeviceResources::ResizeBuffers()
 	m_bIsTearingDown = true;
 
 	m_swapChain->GetDesc1(&scDesc);
-    hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width),
-                                    lround(m_outputSize.Height), scDesc.Format,
-	                                (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
-	);
+	EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
+	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
+	  hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width), lround(m_outputSize.Height), scDesc.Format, (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT);
+	else
+	  hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width), lround(m_outputSize.Height), scDesc.Format, (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
     {
@@ -923,10 +924,10 @@ void DX::DeviceResources::ResizeBuffers()
 	  {
 		CLog::LogF(LOGDEBUG, "Retrying ResizeBuffers...");
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
-	    hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width),
-		  lround(m_outputSize.Height), scDesc.Format,
-		  (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
-	    );
+		if(presentMode == VS_PRESENTMODE_MULTITHREADED)
+		  hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width), lround(m_outputSize.Height), scDesc.Format, (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT);
+		else
+		  hr = m_swapChain->ResizeBuffers(scDesc.BufferCount, lround(m_outputSize.Width), lround(m_outputSize.Height), scDesc.Format, (windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 		++retryCount;
 	  }
 	  //cl other fail hr???
@@ -975,15 +976,21 @@ void DX::DeviceResources::ResizeBuffers()
     swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     swapChainDesc.Stereo = bHWStereoEnabled;
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	EPRESENTMODE presentMode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
 #ifdef TARGET_WINDOWS_DESKTOP
-    swapChainDesc.BufferCount = 3; //cl 3 for presenter thread. 
+	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
+	  swapChainDesc.BufferCount = 3; 
+	else
+	  swapChainDesc.BufferCount = 6;
+
 #else
     swapChainDesc.BufferCount = 3; // Xbox don't like 6 backbuffers (3 is fine even for 4K 60 fps)
 #endif
     // FLIP_DISCARD improves performance (needed in some systems for 4K HDR 60 fps)
     swapChainDesc.SwapEffect = CSysInfo::IsWindowsVersionAtLeast(CSysInfo::WindowsVersionWin10) ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-	  swapChainDesc.Flags = windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-	  swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    swapChainDesc.Flags = windowed ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
+      swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 	swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
     swapChainDesc.SampleDesc.Count = 1;
     swapChainDesc.SampleDesc.Quality = 0;
@@ -1031,8 +1038,7 @@ void DX::DeviceResources::ResizeBuffers()
     }
 
 	//cl best place for this?
-	EPRESENTMODE mode = (EPRESENTMODE) CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE);
-	if(mode == VS_PRESENTMODE_MULTITHREADED)
+	if(presentMode == VS_PRESENTMODE_MULTITHREADED)
 	{
 	  StartPresentThread();
 	  StartWatchdog();
@@ -1436,11 +1442,6 @@ else
 
 	if(SUCCEEDED(hr))
 	{
-	  if(m_latencyWaitableObject)
-	  {
-		DWORD waitResult = ::WaitForSingleObject(m_latencyWaitableObject, 100);
-	  }
-
 	  if(pCommandList)
 	  {
 		{
@@ -1503,7 +1504,8 @@ else
 
 	  if(m_swapChain)
 	  {
-  	    hr = m_swapChain->Present(1, 0);
+		DXGI_PRESENT_PARAMETERS parameters = {};
+		HRESULT hr = m_swapChain->Present1(1, 0, &parameters);
 
 		LARGE_INTEGER qpc;
 		::QueryPerformanceCounter(&qpc);
