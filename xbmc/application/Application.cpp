@@ -2351,6 +2351,7 @@ void CApplication::Process()
 void CApplication::ProcessSlow()
 {
 
+#if 0
   if(CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_PRESENTMODE) == VS_PRESENTMODE_CLASSIC)
   {
 	static bool bInit = false;
@@ -2374,6 +2375,7 @@ void CApplication::ProcessSlow()
 	}
   }
 
+#endif
 
   const auto appPlayer = GetComponent<CApplicationPlayer>();
   appPlayer->UpdateSlow();
