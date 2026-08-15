@@ -44,7 +44,7 @@ public:
 
   const CVideoSettings& GetDefaultVideoSettings() const { return m_defaultVideoSettings; }
   CVideoSettings& GetDefaultVideoSettings() { return m_defaultVideoSettings; }
-  void SetDefaultVideoSettings(const CVideoSettings&vs) { this->m_defaultVideoSettings = vs; this->m_defaultVideoSettings.m_PlaceboSkinZoomHint = 0; }
+  void SetDefaultVideoSettings(const CVideoSettings&vs) { this->m_defaultVideoSettings = vs; this->m_defaultVideoSettings.m_PlaceboSkinZoomHint = 0; this->m_defaultVideoSettings.m_PlaceboShadersHooks = {};}
 
 
   const CGameSettings& GetDefaultGameSettings() const { return m_defaultGameSettings; }
