@@ -1575,12 +1575,12 @@ void CPLHelper::InitializeShaders(pl_gpu gpu, CVideoSettings& vs)
 	  vs.m_PlaceboShadersHooks.m_Valid.push_back(false);
 
 	  if (vs.m_PlaceboShadersFilename[i].empty())
-	    return;
+	    continue;
 	  CFile shaderFile;
 	  if (!shaderFile.Open(vs.m_PlaceboShadersFilename[i]))
 	  {
 		CLog::LogF(LOGERROR, "Could not open shader file: {}", vs.m_PlaceboShadersFilename[i]);
-		return;
+		continue;
 	  }
 
 	  // Read entire file to memory
@@ -1588,7 +1588,7 @@ void CPLHelper::InitializeShaders(pl_gpu gpu, CVideoSettings& vs)
 	  if (fileSize == 0)
 	  {
 		CLog::LogF(LOGERROR, "Error parsing shader file: {}", vs.m_PlaceboShadersFilename[i]);
-		return;
+		continue;
 	  }
 
 	  BYTE* pBuffer = new BYTE[(size_t)fileSize];
@@ -1600,7 +1600,7 @@ void CPLHelper::InitializeShaders(pl_gpu gpu, CVideoSettings& vs)
 	  if (!pHook)
 	  {
 		CLog::LogF(LOGERROR, "Error parsing shader file: {}", vs.m_PlaceboShadersFilename[i]);
-		return;
+		continue;
 	  }
 
 	  std::shared_ptr<const pl_hook> SharedHook(pHook, [](const pl_hook* p) { pl_mpv_user_shader_destroy(&p); });
