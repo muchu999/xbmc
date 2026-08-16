@@ -295,10 +295,12 @@ void CGUIDialogVideoSettings::OnSettingChanged(const std::shared_ptr<const CSett
   if (settingId == SETTING_VIDEO_INTERLACEMETHOD)
   {
 	vs.m_InterlaceMethod = static_cast<EINTERLACEMETHOD>(std::static_pointer_cast<const CSettingInt>(setting)->GetValue());
+	appPlayer->SetVideoSettings(vs);
   }
   else if (settingId == SETTING_VIDEO_SCALINGMETHOD)
   {
 	vs.m_ScalingMethod = static_cast<ESCALINGMETHOD>(std::static_pointer_cast<const CSettingInt>(setting)->GetValue());
+	appPlayer->SetVideoSettings(vs);
   }
   else if (settingId == SETTING_VIDEO_STREAM)
   {
