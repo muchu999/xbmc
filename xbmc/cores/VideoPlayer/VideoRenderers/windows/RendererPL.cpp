@@ -162,7 +162,7 @@ bool CRendererPL::MapFrame(pl_gpu gpu, pl_tex* tex, const struct pl_source_frame
 	}
   }
  
-  InitializeFrameInFieldsMix(frameIn, static_cast<CRendererPL::CRenderBufferImpl*>(rb));
+  InitializeFrameInFieldsMix(pCtx->renderer->m_videoSettings, frameIn, static_cast<CRendererPL::CRenderBufferImpl*>(rb));
   frameIn->user_data = plbuffer;
   plbuffer->m_NeedFrame = true;
   CLog::LogFC(LOGDEBUG, LOGPLACEBO, "MapFrame idx: {} pts: {}", plbuffer->frameIdx, plbuffer->pts);
@@ -251,10 +251,10 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
   }
   else
   {
-	if(pBuf->full_range)
-	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
-	else
-	  pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+	  if(pBuf->full_range)
+	    pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
+	  else
+	    pVideoContext1->VideoProcessorSetStreamColorSpace1(pProcessor, 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
   }
 
   // Output
@@ -270,7 +270,7 @@ bool CRTXVideoProcessor::ConfigureColorSpaces(CRenderBuffer* pBuffer, ID3D11Vide
   {
 	static DXGI_COLOR_SPACE_TYPE color = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;  //NOt making a difference in many cases, G10 G22...
 	pVideoContext1->VideoProcessorSetOutputColorSpace1(pProcessor, color);
-  }
+	}
 
   return true;
 }
@@ -296,14 +296,14 @@ bool CRendererPL::Configure(const VideoPicture& picture, float fps, unsigned ori
   // Auto switch HDR only if supported and "Settings/Player/Use HDR display capabilities" = ON
   if (m_AutoSwitchHDR)
   {
-    m_initialHdrEnabled = DX::Windowing()->IsHDROutput();
+    m_initialHdrEnabled = DX::DeviceResources::Get()->IsHDROutput1();
     CLog::LogF(LOGDEBUG, "Storing Windows HDR state: {}", m_initialHdrEnabled ? "ON" : "OFF");
 
 	const bool streamIsHDR = (picture.color_primaries == AVCOL_PRI_BT2020) &&
 	  (picture.color_transfer == AVCOL_TRC_SMPTE2084 ||
 		picture.color_transfer == AVCOL_TRC_ARIB_STD_B67);
 
-    if ((streamIsHDR && !DX::Windowing()->IsHDROutput()) || (m_videoSettings.m_PlaceboUseHdrForSdr && !DX::Windowing()->IsHDROutput()))
+    if ((streamIsHDR && !DX::DeviceResources::Get()->IsHDROutput1()) || (m_videoSettings.m_PlaceboUseHdrForSdr && !DX::DeviceResources::Get()->IsHDROutput1()))
       DX::Windowing()->ToggleHDR();
   }
 
@@ -360,7 +360,7 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
 	info.render2 += StringUtils::Format(", max CLL: {}, max FALL: {}", hdr.max_cll, hdr.max_fall);
   }
 
-  info.render3 = StringUtils::Format("FrameIn maxLuma: {:5.0f}, maxPqy: {:5.0f}, avgPqy: {:5.0f}, Out minLuma: {:.4f}, maxLuma: {:5.0f}",
+  info.render3 = StringUtils::Format("FrameIn maxLuma: {:5.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}, Out minLuma: {:.4f}, maxLuma: {:5.0f}",
 	plbuffer->m_FrameInColor.hdr.max_luma,
 	Pq2nit(plbuffer->m_FrameInColor.hdr.max_pq_y),
 	Pq2nit(plbuffer->m_FrameInColor.hdr.avg_pq_y),
@@ -369,7 +369,7 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
 
   info.render4 = StringUtils::Format("PeakDetect:");
   if(plbuffer->m_bHasPeakDetectMetadata)
-    info.render4 += StringUtils::Format(" maxPqy: {:5.0f}, avgPqy: {:5.0f}", Pq2nit(plbuffer->m_PeakDetectMetadata.max_pq_y), Pq2nit(plbuffer->m_PeakDetectMetadata.avg_pq_y));
+    info.render4 += StringUtils::Format(" maxPqy: {:6.2f}, avgPqy: {:6.2f}", Pq2nit(plbuffer->m_PeakDetectMetadata.max_pq_y), Pq2nit(plbuffer->m_PeakDetectMetadata.avg_pq_y));
 
   pl_queue q = *PL::PLInstance::Get()->GetQueue();
   info.render5 = StringUtils::Format("ScreenFps: {:.3f}, LPvps:{:.3f}, SourceFps: {:.3f}({:1}), LPfps: {:.3f}, ", m_ScreenFps, pl_queue_estimate_vps(q), m_fps, plbuffer->pictureFlags & DVP_FLAG_INTERLACED ? "i" : "p", pl_queue_estimate_fps(q));
@@ -869,7 +869,7 @@ bool CRendererPL::InitializeFrame(pl_swapchain sw, pl_frame &frameOut)
   return true;
 }
 
-void CRendererPL::InitializeFrameInFieldsMix(pl_frame* frameIn, CRendererPL::CRenderBufferImpl* buffer)
+void CRendererPL::InitializeFrameInFieldsMix(CVideoSettings& vs, pl_frame* frameIn, CRendererPL::CRenderBufferImpl* buffer)
 {
   frameIn->color = buffer->m_ColorSpace;
   frameIn->repr.levels = buffer->full_range ? PL_COLOR_LEVELS_FULL : PL_COLOR_LEVELS_LIMITED;
@@ -886,6 +886,11 @@ void CRendererPL::InitializeFrameInFieldsMix(pl_frame* frameIn, CRendererPL::CRe
   {
 	if(frameIn->repr.sys == PL_COLOR_SYSTEM_UNKNOWN)
 	  frameIn->repr.sys = PL_COLOR_SYSTEM_BT_709;
+  }
+  if(!vs.m_PlaceboDolbyVisionEnabled)
+  {
+	frameIn->color.hdr.max_pq_y = 0;
+	frameIn->color.hdr.avg_pq_y = 0;
   }
 
   frameIn->num_planes = buffer->plFormat.num_planes;
@@ -985,7 +990,7 @@ void CRendererPL::InitializeFrameInFields(pl_frame* frameIn, CRendererPL::CRende
   }
   else 
   {
-	InitializeFrameInFieldsMix(frameIn, buffer);
+	InitializeFrameInFieldsMix(m_videoSettings, frameIn, buffer);
   }
 }
 
@@ -1900,7 +1905,7 @@ void CRendererPL::RenderMixExec(CRenderBufferImpl* buffer, double renderPts, CVi
 void CRendererPL::ProcessHDR(CRenderBuffer* rb)
 {
   
-  if(  m_AutoSwitchHDR && !DX::Windowing()->IsHDROutput() && (rb->color_transfer == AVCOL_TRC_SMPTE2084 || rb->color_transfer == AVCOL_TRC_ARIB_STD_B67 || m_videoSettings.m_PlaceboUseHdrForSdr) )
+  if(  m_AutoSwitchHDR && !DX::DeviceResources::Get()->IsHDROutput1() && (rb->color_transfer == AVCOL_TRC_SMPTE2084 || rb->color_transfer == AVCOL_TRC_ARIB_STD_B67 || m_videoSettings.m_PlaceboUseHdrForSdr) )
   {
 	//PL::PLInstance::Get()->DestroySwapchain();
 	DX::Windowing()->ToggleHDR(); // Toggle display HDR ON
@@ -1911,7 +1916,7 @@ void CRendererPL::ProcessHDR(CRenderBuffer* rb)
   
 
   //cl  m_HdrType used a bit is base class...to look into
-  if (!DX::Windowing()->IsHDROutput())
+  if (!DX::DeviceResources::Get()->IsHDROutput1())
   {
 	if (m_HdrType != HDR_TYPE::HDR_NONE_SDR)
 	{
@@ -2034,14 +2039,6 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
   {
 	if(disable_residual_flag)
 	  m_ColorSpace = doviColorSpace;
-	//m_ColorSpace.primaries = PL_COLOR_PRIM_BT_2020; //cl ?
-	//m_ColorSpace.transfer = PL_COLOR_TRC_PQ; //cl ?
-	//m_ColorSpace.hdr.min_luma = pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, doviColor.source_min_pq / 4095.0f); //cl ? 
-	//m_ColorSpace.hdr.max_luma = pl_hdr_rescale(PL_HDR_PQ, PL_HDR_NITS, doviColor.source_max_pq / 4095.0f); //cl ?
-
-	//if(hasDoviExt) {
-	 // m_ColorSpace.hdr.max_pq_y = doviExt.l1.max_pq / 4095.0f;
-	  //m_ColorSpace.hdr.avg_pq_y = doviExt.l1.avg_pq / 4095.0f;
   }
 }
 
@@ -2244,7 +2241,6 @@ bool CRendererPL::UploadBuffer(CRenderBuffer* buffer)
   }
   else
   {
-	// We need to upload the texture to GPU for blit, tried NV12 upload but ran into problems..., simply render with libplacebo for now
 	if(m_RtxVideoProcessor.IsRtxPipelineEnabled())
 	{
 	  ID3D11DeviceContext* pDeviceContext = nullptr;
@@ -2606,7 +2602,7 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   if(FAILED(hr)) 
   {
 	CLog::LogF(LOGERROR, "QueryInterface failed: {}", hr);
-	return false;
+    return false;
   }
 
   // Check how many past and future reference frames the NVIDIA driver needs
@@ -2625,7 +2621,7 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   if(FAILED(hr)) 
   {
 	CLog::LogF(LOGERROR, "CreateVideoProcessor failed: {}", hr);
-	return false;
+    return false;
   }
 
   m_pVideoContext->VideoProcessorSetStreamAutoProcessingMode(m_pVideoProcessor.Get(), 0, FALSE);
@@ -2643,6 +2639,62 @@ bool CRTXVideoProcessor::InitializePipeline(unsigned int width, unsigned int hei
   color.YCbCr = {0.0625f, 0.5f, 0.5f, 1.0f}; // black color
   m_pVideoContext->VideoProcessorSetOutputBackgroundColor(m_pVideoProcessor.Get(), TRUE, &color);
 
+  {
+	ComPtr<ID3D11VideoContext2> videoCtx2;
+	if(SUCCEEDED(m_pVideoContext.As(&videoCtx2)))
+	{
+#if 1
+	  DXGI_HDR_METADATA_HDR10 hdr10 {};
+	  hdr10.MaxMasteringLuminance = 1000;
+	  hdr10.MinMasteringLuminance = 0.000001;
+
+	  //hdr10.RedPrimary [0] = 0;   hdr10.RedPrimary [1] = 0;
+	  //hdr10.GreenPrimary [0] = 0; hdr10.GreenPrimary [1] = 0;
+	  //hdr10.BluePrimary [0] = 0;  hdr10.BluePrimary [1] = 0;
+	  //hdr10.WhitePoint [0] = 0;   hdr10.WhitePoint [1] = 0;
+	  //hdr10.MaxMasteringLuminance = 0;
+	  //hdr10.MinMasteringLuminance = 0;
+	  //hdr10.MaxContentLightLevel = 0;      // MaxCLL = 0
+	  //hdr10.MaxFrameAverageLightLevel = 0; // MaxFALL = 0
+
+	  videoCtx2->VideoProcessorSetOutputHDRMetaData(m_pVideoProcessor.Get(), DXGI_HDR_METADATA_TYPE_HDR10, sizeof(DXGI_HDR_METADATA_HDR10), &hdr10);
+	  videoCtx2->VideoProcessorSetStreamHDRMetaData(m_pVideoProcessor.Get(), 0, DXGI_HDR_METADATA_TYPE_HDR10, sizeof(DXGI_HDR_METADATA_HDR10), &hdr10);
+#endif
+#if 0
+	  videoCtx2->VideoProcessorSetStreamHDRMetaData(
+		m_pVideoProcessor.Get(),
+		0,
+		DXGI_HDR_METADATA_TYPE_NONE, // Tells the driver this is SDR/No HDR
+		0,                           // Size is 0
+		nullptr                      // No payload needed
+	  );
+#endif
+
+#if 0
+	  videoCtx2->VideoProcessorSetStreamHDRMetaData(
+		m_pVideoProcessor.Get(),
+		0,
+		DXGI_HDR_METADATA_TYPE_NONE, // Tells the driver this is SDR/No HDR
+		0,                           // Size is 0
+		nullptr                      // No payload needed
+	  );
+#endif
+
+#if 0
+	  videoCtx2->VideoProcessorSetOutputHDRMetaData(
+		m_pVideoProcessor.Get(),
+		DXGI_HDR_METADATA_TYPE_NONE, // Tells the driver this is SDR/No HDR
+		0,                           // Size is 0
+		nullptr                      // No payload needed
+	  );	 
+#endif
+	  CLog::LogF(LOGDEBUG, "video processor tone mapping disabled.");
+	}
+	else
+	{
+	  CLog::LogF(LOGDEBUG, "unable to retrieve ID3D11VideoContext2 to disable video processor tone mapping.");
+	}
+  }
 
   m_bInitialized = true;
   return true;

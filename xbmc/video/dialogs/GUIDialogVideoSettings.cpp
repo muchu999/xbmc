@@ -266,6 +266,7 @@ using namespace XFILE;
 #define SETTING_LIB_PLACEBO_BRIGHTNESS                          "video.libplacebo.brightness"
 #define SETTING_LIB_PLACEBO_CONTRAST                            "video.libplacebo.contrast"
 #define SETTING_LIB_PLACEBO_VSR_GAMMA_CORRECTION                "video.libplacebo.vsr_gamma_correction"
+#define SETTING_LIB_PLACEBO_DOLBY_VISION_ENABLED                "video.libplacebo.dolby_vision_enabled"
 
 #define CreateGroup(thegroup,thecategory) std::shared_ptr<CSettingGroup> thegroup = AddGroup(thecategory); if (thegroup == NULL) {CLog::Log(LOGERROR, "CGUIDialogLibplacebo: unable to setup settings");  return; }
 
@@ -790,6 +791,11 @@ void CGUIDialogVideoSettings::OnSettingChanged(const std::shared_ptr<const CSett
   else if(settingId == SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS)
   {
 	vs.m_PlaceboNvRtxDisableScalers = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
+	appPlayer->SetVideoSettings(vs);
+  }
+  else if(settingId == SETTING_LIB_PLACEBO_DOLBY_VISION_ENABLED)
+  {
+	vs.m_PlaceboDolbyVisionEnabled = std::static_pointer_cast<const CSettingBool>(setting)->GetValue();
 	appPlayer->SetVideoSettings(vs);
   }
   else if (settingId == SETTING_LIB_PLACEBO_SDR_TARGET_CONTRAST)
@@ -1959,6 +1965,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_HDR_ENABLED, 55387, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxHdrEnabled);
 	AddToggle(groupOptions, SETTING_LIB_PLACEBO_NV_RTX_DISABLE_SCALERS, 55389, SettingLevel::Basic, videoSettings.m_PlaceboNvRtxDisableScalers);
 	AddSlider(groupOptions, SETTING_LIB_PLACEBO_VSR_GAMMA_CORRECTION, 55393, SettingLevel::Basic, videoSettings.m_PlaceboVsrGammaCorrection, "{0:5.3f}", (float) 0.5, (float) .001, (float) 2.0, 55393, usePopup);
+	AddToggle(groupOptions, SETTING_LIB_PLACEBO_DOLBY_VISION_ENABLED, 55394, SettingLevel::Basic, videoSettings.m_PlaceboDolbyVisionEnabled);
 
 	entries.clear();
 	entries.emplace_back(55315, static_cast<int>(SettinglibPlaceboTargetColorspaceHint::AUTO));

@@ -122,6 +122,7 @@ void CVideoSettings::copy(const CVideoSettings& other)
   m_PlaceboNvSuperResolutionEnabled = other.m_PlaceboNvSuperResolutionEnabled;
   m_PlaceboNvRtxHdrEnabled = other.m_PlaceboNvRtxHdrEnabled;
   m_PlaceboNvRtxDisableScalers = other.m_PlaceboNvRtxDisableScalers;
+  m_PlaceboDolbyVisionEnabled = other.m_PlaceboDolbyVisionEnabled;
   m_PlaceboSdrTargetContrast = other.m_PlaceboSdrTargetContrast;
   m_PlaceboTargetColorspaceHint = other.m_PlaceboTargetColorspaceHint;
   m_PlaceboTargetColorspaceHintMode = other.m_PlaceboTargetColorspaceHintMode;
@@ -249,6 +250,7 @@ void CVideoSettings::ResetSdrToHdrSettings(PlOptionsWrapper::reset_type type)
   m_PlaceboNvSuperResolutionEnabled = false;
   m_PlaceboNvRtxHdrEnabled = false;
   m_PlaceboNvRtxDisableScalers = true;
+  m_PlaceboDolbyVisionEnabled = true;
   m_PlaceboSdrTargetContrast = -1;
   m_PlaceboSdrSaturation = 57.0; 
   //m_PlaceboTest = 0.0f;
@@ -377,6 +379,7 @@ bool CVideoSettings::operator!=(const CVideoSettings& right) const
   if (m_PlaceboNvSuperResolutionEnabled != right.m_PlaceboNvSuperResolutionEnabled) return true;
   if (m_PlaceboNvRtxHdrEnabled != right.m_PlaceboNvRtxHdrEnabled) return true;
   if(m_PlaceboNvRtxDisableScalers != right.m_PlaceboNvRtxDisableScalers) return true;
+  if(m_PlaceboDolbyVisionEnabled != right.m_PlaceboDolbyVisionEnabled) return true;
   if (m_PlaceboSdrTargetContrast != right.m_PlaceboSdrTargetContrast) return true;
   if (m_PlaceboTargetColorspaceHint != right.m_PlaceboTargetColorspaceHint) return true;
   if (m_PlaceboTargetColorspaceHintMode != right.m_PlaceboTargetColorspaceHintMode) return true;
