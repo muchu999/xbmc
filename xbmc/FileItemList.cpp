@@ -208,12 +208,6 @@ void CFileItemList::Remove(const CFileItem* pItem)
   }
 }
 
-CFileItemList::Iterator CFileItemList::erase(Iterator first, Iterator last)
-{
-  std::unique_lock lock(m_lock);
-  return m_items.erase(first, last);
-}
-
 void CFileItemList::Remove(int iItem)
 {
   std::unique_lock lock(m_lock);
@@ -365,10 +359,16 @@ void CFileItemList::Sort(SortDescription sortDescription)
             sortDescription.sortBy == SortBy::SORT_TITLE ||
             sortDescription.sortBy == SortBy::ORIGINAL_TITLE ||
             sortDescription.sortBy == SortBy::DATE_ADDED ||
-            sortDescription.sortBy == SortBy::RATING || sortDescription.sortBy == SortBy::YEAR ||
+            sortDescription.sortBy == SortBy::RATING ||
+            sortDescription.sortBy == SortBy::USER_RATING ||
+            sortDescription.sortBy == SortBy::MPAA || sortDescription.sortBy == SortBy::YEAR ||
             sortDescription.sortBy == SortBy::PLAYLIST_ORDER ||
             sortDescription.sortBy == SortBy::LAST_PLAYED ||
-            sortDescription.sortBy == SortBy::PLAYCOUNT) ||
+            sortDescription.sortBy == SortBy::PLAYCOUNT || sortDescription.sortBy == SortBy::TIME ||
+            sortDescription.sortBy == SortBy::TOP250 || sortDescription.sortBy == SortBy::VOTES ||
+            sortDescription.sortBy == SortBy::GENRE || sortDescription.sortBy == SortBy::COUNTRY ||
+            sortDescription.sortBy == SortBy::STUDIO || sortDescription.sortBy == SortBy::RANDOM ||
+            sortDescription.sortBy == SortBy::PATH) ||
            m_sortIgnoreFolders)
   {
     sortDescription.sortAttributes =
@@ -675,8 +675,11 @@ void ChangeFolderToFile(const std::shared_ptr<CFileItem>& item, const std::strin
 
 void ConvertDiscFoldersToFiles(std::vector<std::shared_ptr<CFileItem>> items)
 {
-  auto folderItems{items | std::views::filter([](const std::shared_ptr<CFileItem>& item)
-                                              { return item->IsFolder(); })};
+  auto folderItems{items | std::views::filter(
+                               [](const std::shared_ptr<CFileItem>& item) {
+                                 return item->IsFolder() &&
+                                        !item->GetProperty(PROPERTY_UNCHANGED).asBoolean();
+                               })};
   for (const auto& item : folderItems)
   {
     if (auto playPath{VIDEO::UTILS::GetOpticalMediaPath(*item)}; !playPath.empty())

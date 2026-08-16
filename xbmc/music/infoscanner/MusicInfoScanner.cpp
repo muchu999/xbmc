@@ -38,6 +38,7 @@
 #include "guilib/GUIWindowManager.h"
 #include "imagefiles/ImageFileURL.h"
 #include "interfaces/AnnouncementManager.h"
+#include "music/AudioType.h"
 #include "music/MusicFileItemClassify.h"
 #include "music/MusicLibraryQueue.h"
 #include "music/MusicThumbLoader.h"
@@ -73,7 +74,6 @@ using KODI::UTILITY::CDigest;
 CMusicInfoScanner::CMusicInfoScanner()
 : m_fileCountReader(this, "MusicFileCounter")
 {
-  m_bStop = false;
   m_currentItem=0;
   m_itemCount=0;
   m_flags = 0;
@@ -83,7 +83,6 @@ CMusicInfoScanner::~CMusicInfoScanner() = default;
 
 void CMusicInfoScanner::Process()
 {
-  m_bStop = false;
   CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::AudioLibrary, "OnScanStarted");
   try
   {
@@ -99,7 +98,8 @@ void CMusicInfoScanner::Process()
     // check if we only need to perform a cleaning
     if (m_bClean && m_pathsToScan.empty())
     {
-      CMusicLibraryQueue::GetInstance().CleanLibrary(false);
+      if (!m_bStop)
+        CMusicLibraryQueue::GetInstance().CleanLibrary(false);
       m_handle = NULL;
       m_bRunning = false;
 
@@ -150,8 +150,8 @@ void CMusicInfoScanner::Process()
 
         // Clear list of albums added by this scan
         m_albumsAdded.clear();
-        bool scancomplete = DoScan(it);
-        if (scancomplete)
+        if ([[maybe_unused]] const auto [scanComplete, foundContent] = DoScan(it);
+            scanComplete == ScanComplete::Completed)
         {
           if (!m_albumsAdded.empty())
           {
@@ -479,7 +479,8 @@ static std::string Prettify(const std::string& strDirectory)
   return CURL::Decode(url.GetWithoutUserDetails());
 }
 
-bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
+std::pair<CInfoScanner::ScanComplete, CInfoScanner::ContentFound> CMusicInfoScanner::DoScan(
+    const std::string& strDirectory)
 {
   if (m_handle)
   {
@@ -490,7 +491,7 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
 
   std::set<std::string>::const_iterator it = m_seenPaths.find(strDirectory);
   if (it != m_seenPaths.end())
-    return true;
+    return std::make_pair(ScanComplete::Completed, ContentFound::None);
 
   m_seenPaths.insert(strDirectory);
 
@@ -498,10 +499,10 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
   const std::vector<std::string> &regexps = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_audioExcludeFromScanRegExps;
 
   if (CUtil::ExcludeFileOrFolder(strDirectory, regexps, &m_regexpCache))
-    return true;
+    return std::make_pair(ScanComplete::Completed, ContentFound::None);
 
   if (HasNoMedia(strDirectory))
-    return true;
+    return std::make_pair(ScanComplete::Completed, ContentFound::None);
 
   // load subfolder
   CFileItemList items;
@@ -515,6 +516,7 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
   GetPathHash(items, hash);
 
   // check whether we need to rescan or not
+  ContentFound foundContent{ContentFound::None};
   std::string dbHash;
   if ((m_flags & SCAN_RESCAN) || !m_musicDatabase.GetPathHash(strDirectory, dbHash) || !StringUtils::EqualsNoCase(dbHash, hash))
   { // path has changed - rescan
@@ -538,6 +540,7 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
     {
       if (m_handle)
         OnDirectoryScanned(strDirectory);
+      foundContent = ContentFound::NewContentFound;
     }
 
     // save information about this folder
@@ -568,14 +571,14 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
     // if we have a directory item (non-playlist) we then recurse into that folder
     if (pItem->IsFolder() && !pItem->IsParentFolder() && !PLAYLIST::IsPlayList(*pItem))
     {
-      std::string strPath=pItem->GetPath();
-      if (!DoScan(strPath))
-      {
+      const auto [scanComplete, foundContentOnRecursion] = DoScan(pItem->GetPath());
+      if (scanComplete == ScanComplete::Stopped)
         m_bStop = true;
-      }
+      if (foundContentOnRecursion == ContentFound::NewContentFound)
+        foundContent = ContentFound::NewContentFound;
     }
   }
-  return !m_bStop;
+  return std::make_pair(m_bStop ? ScanComplete::Stopped : ScanComplete::Completed, foundContent);
 }
 
 CInfoScanner::InfoRet CMusicInfoScanner::ScanTags(const CFileItemList& items,
@@ -989,8 +992,7 @@ int CMusicInfoScanner::RetrieveMusicInfo(const std::string& strDirectory, CFileI
 
     // mark albums without a title as singles
     if (album.strAlbum.empty())
-      album.releaseType = ReleaseType::Single;
-
+      album.releaseType = AudioType::Type::Single;
     album.strPath = strDirectory;
     m_musicDatabase.AddAlbum(album, m_idSourcePath);
     m_albumsAdded.insert(album.idAlbum);

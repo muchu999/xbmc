@@ -352,6 +352,8 @@ constexpr uint32_t RETROPLAYER_OVERVIEW              = 1709;
 constexpr uint32_t RETROPLAYER_GAME_CLIENT           = 1710;
 constexpr uint32_t RETROPLAYER_GAME_CLIENT_NAME      = 1711;
 constexpr uint32_t RETROPLAYER_GAME_CLIENT_PLATFORMS = 1712;
+constexpr uint32_t RETROPLAYER_RICH_PRESENCE         = 1713;
+constexpr uint32_t RETROPLAYER_ACHIEVEMENTS_LOGGED_IN = 1714;
 constexpr uint32_t RETROPLAYER_SUPPORTS_EJECT        = 1700;
 constexpr uint32_t RETROPLAYER_DISC_EJECTED          = 1701;
 constexpr uint32_t RETROPLAYER_DISC_LABEL            = 1702;
@@ -436,6 +438,11 @@ constexpr uint32_t VISUALISATION_PRESET              = 411;
 constexpr uint32_t VISUALISATION_NAME                = 412;
 constexpr uint32_t VISUALISATION_ENABLED             = 413;
 constexpr uint32_t VISUALISATION_HAS_PRESETS         = 414;
+// unused id 415
+constexpr uint32_t VIDEOPLAYER_AUDIO_LANG_EX         = 416;
+constexpr uint32_t VIDEOPLAYER_AUDIO_NAME            = 417;
+constexpr uint32_t VIDEOPLAYER_SUBTITLE_LANG_EX      = 418;
+constexpr uint32_t VIDEOPLAYER_SUBTITLE_NAME         = 419;
 
 constexpr uint32_t STRING_IS_EMPTY                   = 420;
 constexpr uint32_t STRING_IS_EQUAL                   = 421;
@@ -795,6 +802,12 @@ constexpr uint32_t PLAYER_PROCESS_AUDIOSAMPLERATE    = PLAYER_PROCESS_START + 10
 constexpr uint32_t PLAYER_PROCESS_AUDIOBITSPERSAMPLE = PLAYER_PROCESS_START + 11;
 constexpr uint32_t PLAYER_PROCESS_VIDEOSCANTYPE      = PLAYER_PROCESS_START + 12;
 constexpr uint32_t PLAYER_PROCESS_SUBTITLEDECODER    = PLAYER_PROCESS_START + 13;
+constexpr uint32_t PLAYER_PROCESS_AUDIO_LIVE_BITRATE = PLAYER_PROCESS_START + 14;
+constexpr uint32_t PLAYER_PROCESS_VIDEO_LIVE_BITRATE = PLAYER_PROCESS_START + 15;
+constexpr uint32_t PLAYER_PROCESS_AUDIO_QUEUE_LEVEL  = PLAYER_PROCESS_START + 16;
+constexpr uint32_t PLAYER_PROCESS_AUDIO_QUEUE_DATA_LEVEL = PLAYER_PROCESS_START + 17;
+constexpr uint32_t PLAYER_PROCESS_VIDEO_QUEUE_LEVEL  = PLAYER_PROCESS_START + 18;
+constexpr uint32_t PLAYER_PROCESS_VIDEO_QUEUE_DATA_LEVEL = PLAYER_PROCESS_START + 19;
 
 constexpr uint32_t ADDON_INFOS_START                 = 1600;
 constexpr uint32_t ADDON_SETTING_STRING              = ADDON_INFOS_START;

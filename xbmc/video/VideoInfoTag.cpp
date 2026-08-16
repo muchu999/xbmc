@@ -100,7 +100,6 @@ void CVideoInfoTag::Reset()
   m_relevance = -1;
   m_parsedDetails = 0;
   m_coverArt.clear();
-  m_updateSetOverview = true;
 }
 
 bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathInfo, const TiXmlElement *additionalNode)
@@ -229,7 +228,10 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
   if (m_set.HasTitle())
   {
     TiXmlElement set("set");
-    XMLUtils::SetString(&set, "name", m_set.GetOriginalTitle());
+    // Original title used here (in the movie nfo), as the user defined title will be derived from the MSIF set.nfo
+    // This is to ensure that if the movie nfo is used independently then the set name still matches the one from the scraper source
+    XMLUtils::SetString(&set, "name",
+                        m_set.HasOriginalTitle() ? m_set.GetOriginalTitle() : m_set.GetTitle());
     if (m_set.HasOverview())
       XMLUtils::SetString(&set, "overview", m_set.GetOverview());
     movie->InsertEndChild(set);
@@ -1277,7 +1279,9 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
 
   if (XMLUtils::GetString(movie, "filenameandpath", value))
     SetFileNameAndPath(value);
-  XMLUtils::GetInt(movie, "playlist", m_iTrack);
+  // Note <playlist> is not parsed here - it is a bluray playlist, not part of the tag.
+  // See CNfoFile::GetBlurayPlaylist()
+
   XMLUtils::GetBoolean(movie, "hasvideoversions", m_hasVideoVersions);
   XMLUtils::GetBoolean(movie, "isdefaultvideoversion", m_isDefaultVideoVersion);
 
@@ -1430,7 +1434,6 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
 
   // Pre-Jarvis NFO file:
   // <set>A set</set>
-  m_updateSetOverview = false;
   if (XMLUtils::GetString(movie, "set", value))
     SetSet(value);
   // Jarvis+:
@@ -1443,10 +1446,7 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
     {
       SetSet(value);
       if (XMLUtils::GetString(node, "overview", value))
-      {
         SetSetOverview(value);
-        m_updateSetOverview = true;
-      }
     }
   }
 
@@ -1544,6 +1544,7 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
         m_streamDetails.AddStream(p);
       }
     }
+    m_streamDetails.SetSources(CStreamDetail::NFO);
     m_streamDetails.DetermineBestStreams();
   }  /* if fileinfo */
 
@@ -1608,6 +1609,14 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
 bool CVideoInfoTag::HasStreamDetails() const
 {
   return m_streamDetails.HasItems();
+}
+
+bool CVideoInfoTag::HasNFOStreamDetails() const
+{
+  if (!HasStreamDetails())
+    return false;
+
+  return m_streamDetails.GetSources() >= CStreamDetail::NFO;
 }
 
 bool CVideoInfoTag::IsEmpty() const

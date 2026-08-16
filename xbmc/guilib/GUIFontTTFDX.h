@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -15,7 +15,9 @@
 
 #include "D3DResource.h"
 #include "GUIFontTTF.h"
+#include "threads/CriticalSection.h"
 
+#include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
@@ -53,7 +55,6 @@ protected:
   void DeleteHardwareTexture() override;
 
 private:
-  bool UpdateDynamicVertexBuffer(const SVertex* pSysMem, unsigned int count);
   static void AddReference(CGUIFontTTFDX* font, CD3DBuffer* pBuffer);
   static void ClearReference(CGUIFontTTFDX* font, CD3DBuffer* pBuffer);
 
@@ -63,7 +64,9 @@ private:
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_speedupSRV;
   Microsoft::WRL::ComPtr<ID3D11Buffer> m_vertexBuffer;
   std::list<CD3DBuffer*> m_buffers;
+  bool m_scissorClip{false};
 
-  static bool m_staticIndexBufferCreated;
+  static CCriticalSection m_staticIndexBufferSection;
+  static std::atomic<bool> m_staticIndexBufferCreated;
   static Microsoft::WRL::ComPtr<ID3D11Buffer> m_staticIndexBuffer;
 };

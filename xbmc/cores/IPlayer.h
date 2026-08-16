@@ -20,9 +20,6 @@
 #include <vector>
 
 #define CURRENT_STREAM -1
-#define CAPTUREFLAG_CONTINUOUS  0x01 //after a render is done, render a new one immediately
-#define CAPTUREFLAG_IMMEDIATELY 0x02 //read out immediately after render, this can cause a busy wait
-#define CAPTUREFORMAT_BGRA 0x01
 
 struct TextCacheStruct_t;
 class TiXmlElement;
@@ -245,6 +242,12 @@ public:
   virtual float GetRenderAspectRatio() const { return 1.0; }
   virtual void TriggerUpdateResolution() {}
   virtual bool IsRenderingVideo() const { return false; }
+  /*!
+   * \brief True if any subtitle/overlay is actually visible on the current
+   *  presented frame. Per-frame accurate. Default false for players that
+   *  do not render overlays (e.g. retro, paplayer, external).
+   */
+  virtual bool HasVisibleOverlay() const { return false; }
   virtual bool IsLiveStream() const { return false; }
   virtual void GetRects(CRect& source, CRect& dest, CRect& view) const
   {
@@ -262,22 +265,6 @@ public:
   }
   virtual bool Supports(ESCALINGMETHOD method) const { return false; }
   virtual bool Supports(ERENDERFEATURE feature) const { return false; }
-
-  virtual unsigned int RenderCaptureAlloc() { return 0; }
-  virtual void RenderCaptureRelease(unsigned int captureId) {}
-  virtual void RenderCapture(unsigned int captureId,
-                             unsigned int width,
-                             unsigned int height,
-                             int flags)
-  {
-  }
-  virtual bool RenderCaptureGetPixels(unsigned int captureId,
-                                      unsigned int millis,
-                                      uint8_t* buffer,
-                                      unsigned int size)
-  {
-    return false;
-  }
 
   // video and audio settings
   virtual CVideoSettings GetVideoSettings() const { return CVideoSettings(); }

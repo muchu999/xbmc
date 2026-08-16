@@ -7,7 +7,8 @@ DEPS = ../../Makefile.include Makefile PYTHON3-VERSION ../../download-files.incl
                                  11-android-ctypes.patch \
                                  13-wasm-em-config-clang.patch \
                                  14-wasm-build-wasm-default.patch \
-                                 15-wasm-static-hacl.patch
+                                 15-wasm-static-hacl.patch \
+                                 16-ios-platform.patch
 
 ifeq ($(findstring apple-darwin, $(HOST)), apple-darwin)
   ifeq ($(OS), darwin_embedded)
@@ -17,7 +18,9 @@ ifeq ($(findstring apple-darwin, $(HOST)), apple-darwin)
                     ac_cv_func_posix_spawn=no ac_cv_func_posix_spawnp=no \
                     ac_cv_func_forkpty=no ac_cv_lib_util_forkpty=no \
                     ac_cv_func_getgroups=no \
-                    ac_cv_func_system=no
+                    ac_cv_func_system=no \
+                    ac_cv_func_dup3=no \
+                    ac_cv_func_pipe2=no
     export SDKROOT
   endif
   ifeq ($(OS), osx)
@@ -70,12 +73,19 @@ PY_MODULES = py_cv_module_grp=n/a \
 # are not installed outside of the cpython build tree, and cause failure in kodi linking
 # If we wish to support them in the future, we should create "system libs" for them
 PY_MODULES+= py_cv_module__decimal=n/a \
-             py_cv_module__sha2=n/a
+             py_cv_module__sha2=n/a \
+             py_cv_module__zstd=n/a
 
 
 ifeq ($(OS), darwin_embedded)
   PY_MODULES+= py_cv_module__posixsubprocess=n/a \
                py_cv_module__scproxy=n/a
+
+  ifeq ($(findstring iphone,$(TARGET_PLATFORM)),iphone)
+    # see 16-ios-platform.patch
+    export IPHONEOS_DEPLOYMENT_TARGET=$(APPLE_DEPLOYMENT_TARGET)
+    export _host_device=$(subst iphone,,$(TARGET_PLATFORM))
+  endif
 endif
 
 # configuration settings
@@ -115,6 +125,9 @@ ifeq ($(OS),wasm)
 	cd $(PLATFORM); patch -p1 -i ../13-wasm-em-config-clang.patch
 	cd $(PLATFORM); patch -p1 -i ../14-wasm-build-wasm-default.patch
 	cd $(PLATFORM); patch -p1 -i ../15-wasm-static-hacl.patch
+endif
+ifeq ($(findstring iphone,$(TARGET_PLATFORM)),iphone)
+	cd $(PLATFORM); patch -p1 -i ../16-ios-platform.patch
 endif
 	cd $(PLATFORM); $(AUTORECONF)
 	cd $(PLATFORM); $(CONFIGURE)

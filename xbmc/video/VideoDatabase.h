@@ -309,6 +309,9 @@ public:
   int GetSeasonId(int idShow, int season) const;
 
   void GetEpisodesByBlurayPath(const std::string& path, std::vector<CVideoInfoTag>& episodes);
+  void GetEpisodesByBasePath(const std::string& path,
+                             std::vector<CVideoInfoTag>& episodes,
+                             int idShow = -1);
   void GetEpisodesByFile(const std::string& strFilenameAndPath, std::vector<CVideoInfoTag>& episodes);
   void GetEpisodesByFileId(int idFile, std::vector<CVideoInfoTag>& episodes);
   bool GetEpisodeMap(int idShow, EpisodeFileMap& fileMap, int idFile = -1) const;
@@ -603,9 +606,14 @@ public:
   /*! \brief retrieve subpaths of a given path.  Assumes a hierarchical folder structure
    \param basepath the root path to retrieve subpaths for
    \param subpaths the returned subpaths
+   \param excludeDiscPaths true - exclude disc paths that contain VIDEO_TS.IFO or INDEX.BDMV
+                             (default)
+                           false - include encoded paths for cleaning (eg. bluray://, zip:// etc.)
    \return true if we successfully retrieve subpaths (may be zero), false on error
    */
-  bool GetSubPaths(const std::string& basepath, std::vector< std::pair<int, std::string> >& subpaths);
+  bool GetSubPaths(const std::string& basepath,
+                   std::vector<std::pair<int, std::string>>& subpaths,
+                   bool excludeDiscPaths = true);
 
   bool GetSourcePath(const std::string &path, std::string &sourcePath);
   bool GetSourcePath(const std::string& path,
@@ -644,6 +652,9 @@ public:
   void GetEpisodesByName(const std::string& strSearch, CFileItemList& items);
   void GetMusicVideosByName(const std::string& strSearch, CFileItemList& items);
 
+  void GetMovieExtrasByName(const std::string& strSearch, CFileItemList& items);
+
+  std::string GetPlotByShowId(int idShow);
   void GetEpisodesByPlot(const std::string& strSearch, CFileItemList& items);
   void GetMoviesByPlot(const std::string& strSearch, CFileItemList& items);
 
@@ -944,12 +955,13 @@ public:
   /*!
    * \brief Remove a video from the library and transfer all of its assets to another video of the
    * same type.
-   * \param itemType Type of the video being converted
-   * \param dbIdSource id of the video being converted
-   * \param dbIdTarget id that the video will be attached to
-   * \param idVideoVersion new versiontype of the default version of the video
-   * \param assetType new asset type of the default version of the video
-   * \param cascadeAction action to take on the assets of the video being converted
+   * \param itemType[in] Type of the video being converted
+   * \param dbIdSource[in] id of the video being converted
+   * \param dbIdTarget[in] id that the video will be attached to
+   * \param idVideoVersion[in] new versiontype of the default version of the video
+   *                           special value -1: keep the current versiontype of the video.
+   * \param assetType[in] new asset type of the default version of the video.
+   * \param cascadeAction[in] action to take on the assets of the video being converted
    *        (used to preserve streamdetails for bluray playlists)
    * \return true for success, false otherwise
    */
@@ -974,7 +986,7 @@ public:
                                int idVideoVersion,
                                VideoAssetType assetType);
 
-  void SetDefaultVideoVersion(VideoDbContentType itemType, int dbId, int idFile);
+  bool SetDefaultVideoVersion(VideoDbContentType itemType, int dbId, int idFile);
   void SetVideoVersion(int idFile, int idVideoVersion);
   int AddOrValidateVideoVersionType(const std::string& typeVideoVersion);
   int AddVideoVersionType(const std::string& typeVideoVersion,
@@ -998,8 +1010,17 @@ public:
   bool DeleteVideoAsset(int idFile);
   bool IsDefaultVideoVersion(int idFile);
   bool GetVideoVersionTypes(VideoDbContentType idContent,
-                            VideoAssetType asset,
+                            VideoAssetType assetType,
                             CFileItemList& items);
+
+  /*!
+   * \brief Check the validity of the video asset type id.
+   * \param[in] typeId Id of the video asset type
+   * \param[in] idContent db item type
+   * \param[in] asset type of the video asset type
+   * \return true when the id exists and matches the provided content and asset type, false otherwise.
+   */
+  bool IsValidVideoAssetType(int typeId, VideoDbContentType idContent, VideoAssetType asset);
   bool SetVideoVersionDefaultArt(int dbId, int idFrom, const MediaType& mediaType);
   void UpdateVideoVersionTypeTable();
   bool GetVideoVersionsNav(const std::string& strBaseDir,
@@ -1241,6 +1262,11 @@ private:
                  std::string& strPath,
                  std::string& strFileName) const;
   void InvalidatePathHash(const std::string& strPath);
+
+  /*! \brief Clear the hash of a path, without adding it to the path table if unknown
+   \param strPath the path to clear the hash of
+   */
+  void ClearPathHash(const std::string& strPath);
 
   /*! \brief Get a safe filename from a given string
    \param dir directory to use for the file

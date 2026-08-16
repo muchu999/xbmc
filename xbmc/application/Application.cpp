@@ -121,6 +121,9 @@
 #include "pvr/guilib/PVRGUIActionsPlayback.h"
 #include "pvr/guilib/PVRGUIActionsPowerManagement.h"
 #include "rendering/RenderSystem.h"
+#include "rendering/capture/CaptureMetadata.h"
+#include "rendering/capture/CapturePixels.h"
+#include "rendering/capture/CaptureService.h"
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
@@ -262,6 +265,10 @@ bool CApplication::Create()
 
   // Register JobManager service
   CServiceBroker::RegisterJobManager(std::make_shared<CJobManager>());
+
+  // Screen capture service
+  CServiceBroker::RegisterCaptureService(
+      std::make_shared<KODI::RENDERING::CAPTURE::CCaptureService>());
 
   // Announcement service
   m_pAnnouncementManager = std::make_shared<ANNOUNCEMENT::CAnnouncementManager>();
@@ -828,6 +835,53 @@ bool CApplication::OnSettingsSaving() const
   return !m_bStop;
 }
 
+namespace
+{
+// capture tap: serve pending requests from the finished frame before it is
+// presented.
+void ServiceCaptureTaps()
+{
+  using namespace KODI::RENDERING::CAPTURE;
+
+  const auto captureService = CServiceBroker::GetCaptureService();
+  if (!captureService)
+    return;
+
+  const auto requests = captureService->TakeActive(CaptureContent::COMPOSITE);
+  if (requests.empty())
+    return;
+  const auto& request = requests.front(); // at most one consumer per frame
+
+  auto* winSystem = CServiceBroker::GetWinSystem();
+  auto surface = CScreenShot::CreateSurface();
+  if (!winSystem || !surface)
+  {
+    captureService->Fail(request);
+    return;
+  }
+
+  const ScreenshotContext ctx{*winSystem};
+  if (!surface->Read(ctx))
+  {
+    captureService->Fail(request);
+    return;
+  }
+
+  CaptureResult result;
+  result.pixels =
+      std::make_shared<CHeapCapturePixels>(std::unique_ptr<uint8_t[]>(surface->TakeBuffer()));
+  result.width = static_cast<unsigned int>(surface->GetWidth());
+  result.height = static_cast<unsigned int>(surface->GetHeight());
+  result.stride = surface->GetStride();
+  result.format = surface->GetFormat();
+  result.color = GetOutputColorMetadata(*winSystem);
+  result.content = CaptureContent::COMPOSITE; // this tap is the composite half
+
+  captureService->Complete(request, result);
+}
+
+} // namespace
+
 void CApplication::Render()
 {
   // do not render if we are stopped or in background
@@ -852,9 +906,10 @@ void CApplication::Render()
     return;
 
   // render gui layer
-  bool compositing = CServiceBroker::GetWinSystem()->BeginGuiComposite();
+  const bool guiWillRender = appPower->GetRenderGUI() && !m_skipGuiRender;
+  bool compositing = CServiceBroker::GetWinSystem()->BeginGuiComposite(guiWillRender);
 
-  if (appPower->GetRenderGUI() && !m_skipGuiRender)
+  if (guiWillRender)
   {
     if (CServiceBroker::GetWinSystem()->GetGfxContext().GetStereoMode() != RenderStereoMode::OFF)
     {
@@ -886,6 +941,16 @@ void CApplication::Render()
 
   if (compositing)
     CServiceBroker::GetWinSystem()->CompositeGui();
+
+  // serve pending requests from the finished frame, then fail any left
+  // unserved. Both need a frame that really drew: on a skipped frame nothing
+  // could be served, so FrameComplete would kill live requests.
+  if (hasRendered)
+  {
+    ServiceCaptureTaps();
+    if (const auto captureService = CServiceBroker::GetCaptureService())
+      captureService->FrameComplete();
+  }
 
   CServiceBroker::GetRenderSystem()->EndRender();
 
@@ -1526,6 +1591,12 @@ void CApplication::FrameMove(bool processEvents, bool processGUI)
   {
     m_skipGuiRender = false;
 
+    // a new request, or a latched one-shot still awaiting service, marks the
+    // window manager dirty so an otherwise-idle GUI really renders a frame to tap
+    if (const auto captureService = CServiceBroker::GetCaptureService();
+        captureService && captureService->LatchFrame())
+      CServiceBroker::GetGUI()->GetWindowManager().MarkDirty();
+
     /*! @todo look into the possibility to use this for GBM
     int fps = 0;
 
@@ -1548,10 +1619,14 @@ void CApplication::FrameMove(bool processEvents, bool processGUI)
     }
 
     if (!m_bStop)
-    {
-      if (!m_skipGuiRender)
-        CServiceBroker::GetGUI()->GetWindowManager().Process(CTimeUtils::GetFrameTime());
-    }
+      CServiceBroker::GetGUI()->GetWindowManager().Process(CTimeUtils::GetFrameTime());
+
+    // Dirty-driven skip: on paths with a persistent framebuffer (D2P plane or
+    // HDR GUI compositing FBO), skip Render when no controls dirtied themselves
+    // this frame. The persistence keeps the previous OSD on screen for free.
+    if (!m_skipGuiRender && appPlayer->IsRenderingVideoLayer() &&
+        !CServiceBroker::GetGUI()->GetWindowManager().HasDirtyRegions())
+      m_skipGuiRender = true;
     CServiceBroker::GetGUI()->GetWindowManager().FrameMove();
   }
 
@@ -1643,6 +1718,8 @@ bool CApplication::Cleanup()
     GetComponent<CApplicationSkinHandling>()->UnloadSkin();
 
     CServiceBroker::UnregisterTextureCache();
+
+    CServiceBroker::UnregisterCaptureService();
 
     // stop all remaining scripts; must be done after skin has been unloaded,
     // not before some windows still need it when deinitializing during skin
@@ -1820,15 +1897,13 @@ bool CApplication::Stop(int exitCode)
     m_ExitCode = exitCode;
     CLog::Log(LOGINFO, "Stopping all");
 
+    // Stop scanning before the job manager is cancelled below
+    // otherwise scans underway are not stopped
+    CMusicLibraryQueue::GetInstance().CancelAllJobs();
+    CVideoLibraryQueue::GetInstance().CancelAllJobs();
+
     // cancel any jobs from the jobmanager
     CServiceBroker::GetJobManager()->CancelJobs();
-
-    // stop scanning before we kill the network and so on
-    if (CMusicLibraryQueue::GetInstance().IsRunning())
-      CMusicLibraryQueue::GetInstance().CancelAllJobs();
-
-    if (CVideoLibraryQueue::GetInstance().IsRunning())
-      CVideoLibraryQueue::GetInstance().CancelAllJobs();
 
     CServiceBroker::GetAppMessenger()->Cleanup();
 

@@ -35,6 +35,7 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "settings/lib/Setting.h"
+#include "utils/LangCodeExpander.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
@@ -585,7 +586,6 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         }
 
         return true;
-      case VIDEOPLAYER_HDR_TYPE:
       case LISTITEM_VIDEO_HDR_TYPE:
         if (tag->m_streamDetails.GetStreamCount(CStreamDetail::VIDEO) > 1 &&
             tag->m_streamDetails.GetVideoHdrType(2) == "dolbyvision")
@@ -593,7 +593,6 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         else
           value = tag->m_streamDetails.GetVideoHdrType();
         return true;
-      case VIDEOPLAYER_HDR_DETAIL:
       case LISTITEM_VIDEO_HDR_DETAIL:
         if (tag->m_streamDetails.GetStreamCount(CStreamDetail::VIDEO) > 1 &&
             tag->m_streamDetails.GetVideoHdrType(2) == "dolbyvision")
@@ -637,6 +636,15 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
       return true;
     case VIDEOPLAYER_SUBTITLE_CODEC:
       value = m_subtitleInfo.codecName;
+      return true;
+    case VIDEOPLAYER_SUBTITLE_LANG_EX:
+    {
+      if (!g_LangCodeExpander.Lookup(m_subtitleInfo.language, value))
+        value = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(13205); // Unknown
+      return true;
+    }
+    case VIDEOPLAYER_SUBTITLE_NAME:
+      value = m_subtitleInfo.name;
       return true;
     case VIDEOPLAYER_COVER:
       if (m_appPlayer->IsPlayingVideo())
@@ -711,6 +719,15 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
     }
     case VIDEOPLAYER_AUDIO_LANG:
       value = m_audioInfo.language;
+      return true;
+    case VIDEOPLAYER_AUDIO_LANG_EX:
+    {
+      if (!g_LangCodeExpander.Lookup(m_audioInfo.language, value))
+        value = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(13205); // Unknown
+      return true;
+    }
+    case VIDEOPLAYER_AUDIO_NAME:
+      value = m_audioInfo.name;
       return true;
     default:
       break;

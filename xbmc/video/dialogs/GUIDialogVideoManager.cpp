@@ -242,6 +242,18 @@ void CGUIDialogVideoManager::SetVideoAsset(const std::shared_ptr<CFileItem>& ite
   m_videoAsset = item;
 
   Refresh();
+
+  m_selectedVideoAsset.reset();
+  if (m_videoAsset->HasVideoInfoTag())
+  {
+    const int fileId{m_videoAsset->GetVideoInfoTag()->m_iFileId};
+    const auto it{std::find_if(
+        m_videoAssetsList->cbegin(), m_videoAssetsList->cend(), [fileId](const auto& entry)
+        { return entry->HasVideoInfoTag() && entry->GetVideoInfoTag()->m_iFileId == fileId; })};
+
+    if (it != m_videoAssetsList->cend())
+      m_selectedVideoAsset = (*it);
+  }
 }
 
 void CGUIDialogVideoManager::CloseAll()
@@ -329,6 +341,18 @@ void CGUIDialogVideoManager::ChooseArt()
   if (!CGUIDialogVideoInfo::ChooseAndManageVideoItemArtwork(m_selectedVideoAsset))
     return;
 
+  m_hasUpdatedItems = true;
+
+  // Sync the item art if the art was modified on the video asset the dialog was opened for
+  if (m_videoAsset->HasVideoInfoTag() && m_selectedVideoAsset->HasVideoInfoTag())
+  {
+    const auto tag = m_videoAsset->GetVideoInfoTag();
+    const auto selTag = m_selectedVideoAsset->GetVideoInfoTag();
+
+    if (tag->m_iFileId > 0 && tag->m_iFileId == selTag->m_iFileId)
+      m_videoAsset->SetArt(m_selectedVideoAsset->GetArt());
+  }
+
   // refresh data and controls
   Refresh();
   UpdateControls();
@@ -398,6 +422,8 @@ int CGUIDialogVideoManager::ChooseVideoAsset(const std::shared_ptr<CFileItem>& i
   //! @todo db refactor: should not be version, but asset
   CFileItemList list;
   videodb.GetVideoVersionTypes(itemType, assetType, list);
+  const std::string origAssetTitle =
+      item->HasVideoInfoTag() ? item->GetVideoInfoTag()->GetAssetInfo().GetTitle() : "";
 
   int assetId{-1};
   while (true)
@@ -406,6 +432,8 @@ int CGUIDialogVideoManager::ChooseVideoAsset(const std::shared_ptr<CFileItem>& i
 
     dialog->Reset();
     dialog->SetItems(list);
+    if (!origAssetTitle.empty())
+      dialog->SetSelected(origAssetTitle);
     dialog->SetHeading(dialogHeadingMsgId);
     dialog->EnableButton(true, dialogButtonMsgId);
     dialog->Open();
