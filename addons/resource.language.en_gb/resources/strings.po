@@ -25954,7 +25954,7 @@ msgid "RTX video pipeline (req. mixing disabled, bypass queueing)"
 msgstr ""
 
 msgctxt "#55389"
-msgid "Disable scalers when super resolution is active"
+msgid "  Disable scalers when super resolution is active"
 msgstr ""
 
 msgctxt "#55390"
@@ -25970,10 +25970,10 @@ msgid "On"
 msgstr ""
 
 msgctxt "#55393"
-msgid "VSR gamma correction"
+msgid "  VSR gamma correction"
 msgstr ""
 
 msgctxt "#55394"
-msgid "Use Dolby Vision luminance if available instead of peak detection"
+msgid "  Use Dolby Vision luminance if available instead of peak detection"
 msgstr ""
 

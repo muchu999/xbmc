@@ -1316,14 +1316,16 @@ void CRenderManager::PrepareNextRender()
       m_videoDelay -
       static_cast<double>(CServiceBroker::GetWinSystem()->GetFrameLatencyAdjustment()));
 
-  double renderPts = frameOnScreen + m_displayLatency;  //cl latency = delay between frame being rendered and actually being visible on screen
+  const bool isPaused = m_dvdClock.IsPaused();
+  double renderPts = frameOnScreen;
+  if(!isPaused)
+	renderPts += m_displayLatency;
 
-  double pts = m_Queue[m_queued.front()].pts;
-  double nextFramePts = pts; 
+  const double nextFramePts =
+	m_dvdClock.GetClockSpeed() < 0 ? renderPts : m_Queue [m_queued.front()].pts;
+
   double err = 0.0;
 
-  if (m_dvdClock.GetClockSpeed() < 0)
-    nextFramePts = renderPts;
   static double average = 0.0;
   if (m_clockSync.m_enabled)
   {
@@ -1340,6 +1342,8 @@ void CRenderManager::PrepareNextRender()
 		m_clockSync.m_errCount = 0;
 		m_dvdClock.SetVsyncAdjust(-average); //cl for audio sync, the actual value is not used, just a test if it's different from 0 which allows correction to take place with error calculated somewhere else
 	  }
+	  if(!isPaused)
+		renderPts += frametime / 2 - m_clockSync.m_syncOffset;
 	}
   }
   else
@@ -1352,9 +1356,9 @@ void CRenderManager::PrepareNextRender()
   m_renderPts = renderPts;
   m_renderPts2 = renderPts + frametime; // In case of interleaved material, the PrepareNextRender function is only called once.
   CLog::LogFC(LOGDEBUG, LOGAVTIMING,
-              "frameOnScreen: {:.0f}, renderPts: {:.0f}, pts: {:.0f}, nextFramePts: {:.0f}, diff: {:.0f}, render: {}, "
+              "frameOnScreen: {:.0f}, renderPts: {:.0f}, nextFramePts: {:.0f}, diff: {:.0f}, render: {}, "
               "forceNext: {}, Queued: {}, Discard: {}, Free: {}, diffClock: {:.0f}, OnscreenDiff: {:.0f}, VsyncAdjust: {:.0f}, err: {:.0f}, clockDiff: {:.0f}, displayLatency: {:.0f}",
-              frameOnScreen, renderPts, pts, nextFramePts, (renderPts - nextFramePts),
+              frameOnScreen, renderPts, nextFramePts, (renderPts - nextFramePts),
               renderPts >= nextFramePts, m_forceNext, m_queued.size(), m_discard.size(), m_free.size(), diffClock, diff, average, err, clockDiff, m_displayLatency);
   lastFramePts = nextFramePts;
 
