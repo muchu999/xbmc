@@ -5818,7 +5818,6 @@ bool CVideoDatabase::GetVideoSettings(int idFile, CVideoSettings &settings)
       settings.m_Orientation = m_pDS->fv("Orientation").get_asInt();
       settings.m_CenterMixLevel = m_pDS->fv("CenterMixLevel").get_asInt();
 
-
 	  bool libplaceboSaveToDatabase = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(CSettings::SETTING_VIDEOPLAYER_LIBPLACEBOSAVETODB);
 	  if (libplaceboSaveToDatabase)
       {
@@ -5994,10 +5993,10 @@ bool CVideoDatabase::GetVideoSettings(int idFile, CVideoSettings &settings)
 		CPLHelper::UpdateLibPLaceboParamsFromVideoSettings(settings);
 
         m_pDS->close();
-		settings.m_isDefaultVideoSettings = false;
-        return true;
       }
-    }
+	  settings.m_isDefaultVideoSettings = false;
+	  return true;
+	}
     m_pDS->close();
   }
   catch (...)
