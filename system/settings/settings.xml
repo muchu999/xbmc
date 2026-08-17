@@ -379,12 +379,6 @@
       </group>
 	  <group id="6" label="55327">
 		<setting id="videoplayer.libplacebosavetodb" type="boolean" label="55328" help="55329">
-		  <requirement>HasLibplacebo</requirement>
-		  <dependencies>
-			<dependency type="enable">
-			  <condition setting="videoplayer.rendermethod" operator="is">5</condition> <!-- RENDER_METHOD_LIBPLACEBO -->
-			</dependency>
-		  </dependencies>
 		  <level>3</level>
 		  <default>false</default>
 		  <control type="toggle" />
