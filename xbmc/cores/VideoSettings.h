@@ -385,6 +385,7 @@ public:
   bool m_PlaceboNvRtxHdrEnabled;
   bool m_PlaceboNvRtxDisableScalers;
   bool m_PlaceboDolbyVisionEnabled;
+  bool m_PlaceboHdr10PlusEnabled;
   int m_PlaceboSdrTargetContrast;
   int m_PlaceboTargetColorspaceHint;
   int m_PlaceboTargetColorspaceHintMode;

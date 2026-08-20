@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2017-2019 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -303,7 +303,7 @@ CRendererShaders::CRenderBufferImpl::~CRenderBufferImpl()
   CRenderBufferImpl::ReleasePicture();
 }
 
-void CRendererShaders::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
+void CRendererShaders::CRenderBufferImpl::AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings)
 {
   __super::AppendPicture(picture);
 

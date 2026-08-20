@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2017-2019 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -46,7 +46,7 @@ public:
   explicit CRenderBufferImpl(AVPixelFormat av_pix_format, unsigned width, unsigned height);
   ~CRenderBufferImpl();
 
-  void AppendPicture(const VideoPicture& picture) override;
+  void AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings = nullptr) override;
   bool GetDataPlanes(uint8_t*(&planes)[3], int(&strides)[3]) override;
 
   void ReleasePicture() override;

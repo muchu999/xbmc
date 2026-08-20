@@ -838,6 +838,7 @@ void CPLHelper::SaveLibplaceboSettings(const CVideoSettings& vs, TiXmlNode* pNod
   XMLUtils::SetBoolean(pNode, "placebonvrtxhdrenabled", vs.m_PlaceboNvRtxHdrEnabled);
   XMLUtils::SetBoolean(pNode, "placebonvrtxdisablescalers", vs.m_PlaceboNvRtxDisableScalers);
   XMLUtils::SetBoolean(pNode, "placebodolbyvisionenabled", vs.m_PlaceboDolbyVisionEnabled);
+  XMLUtils::SetBoolean(pNode, "placebohdr10plusenabled", vs.m_PlaceboHdr10PlusEnabled);
   XMLUtils::SetInt(pNode, "placebosdrtargetcontrast", vs.m_PlaceboSdrTargetContrast);
   XMLUtils::SetInt(pNode, "placebotargetcolorspacehint", vs.m_PlaceboTargetColorspaceHint);
   XMLUtils::SetInt(pNode, "placebotargetcolorspacehintmode", vs.m_PlaceboTargetColorspaceHintMode);
@@ -1035,6 +1036,7 @@ bool CPLHelper::LoadLibplaceboSettings(CVideoSettings& vs, const TiXmlElement* p
   XMLUtils::GetBoolean(pElement, "placebonvrtxhdrenabled", vs.m_PlaceboNvRtxHdrEnabled);
   XMLUtils::GetBoolean(pElement, "placebonvrtxdisablescalers", vs.m_PlaceboNvRtxDisableScalers);
   XMLUtils::GetBoolean(pElement, "placebodolbyvisionenabled", vs.m_PlaceboDolbyVisionEnabled);
+  XMLUtils::GetBoolean(pElement, "placebohdr10plusenabled", vs.m_PlaceboHdr10PlusEnabled);
   XMLUtils::GetInt(pElement,"placebosdrtargetcontrast",vs.m_PlaceboSdrTargetContrast);
   XMLUtils::GetFloat(pElement,"placebodisplaysdrpeakluminance",vs.m_PlaceboDisplaySdrPeakLuminance);
   XMLUtils::GetInt(pElement, "placebotargetcolorspacehint", vs.m_PlaceboTargetColorspaceHint);

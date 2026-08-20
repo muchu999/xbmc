@@ -25974,6 +25974,10 @@ msgid "  VSR gamma correction"
 msgstr ""
 
 msgctxt "#55394"
-msgid "  Use Dolby Vision luminance if available instead of peak detection"
+msgid "Use Dolby Vision luminance if available instead of peak detection"
+msgstr ""
+
+msgctxt "#55395"
+msgid "Use HDR10+ luminance if available instead of peak detection"
 msgstr ""
 

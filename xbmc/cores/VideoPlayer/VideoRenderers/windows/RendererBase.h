@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2017-2019 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -65,7 +65,7 @@ public:
   unsigned GetHeight() const { return m_heightTex; }
   bool IsLoaded() { return m_bLoaded; }
 
-  virtual void AppendPicture(const VideoPicture& picture);
+  virtual void AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings = nullptr);
   virtual void ReleasePicture();
   virtual HRESULT GetResource(ID3D11Resource** ppResource, unsigned* index) const;
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2017-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -24,7 +24,7 @@
 
 using namespace Microsoft::WRL;
 
-void CRenderBuffer::AppendPicture(const VideoPicture& picture)
+void CRenderBuffer::AppendPicture(const VideoPicture& picture, CVideoSettings *pVideoSettings)
 {
   videoBuffer = picture.videoBuffer;
   videoBuffer->Acquire();

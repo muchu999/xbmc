@@ -5247,6 +5247,7 @@ static std::vector<std::string> LibplaceboColumnslist = {
 								   "PlaceboNvRtxHdrEnabled",
 								   "PlaceboNvRtxDisableScalers",
 								   "PlaceboDolbyVisionEnabled",
+								   "PlaceboHdr10PlusEnabled",
 								   "PlaceboSdrTargetContrast",
 								   "PlaceboTargetColorspaceHint",
 								   "PlaceboTargetColorspaceHintMode",
@@ -5594,6 +5595,7 @@ bool CVideoDatabase::AddLibplaceboColumnsToSettingsTable(int idFile, const CVide
 		if (list[i] == "PlaceboNvRtxHdrEnabled") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboNvRtxHdrEnabled                    bool NOT NULL DEFAULT %i", vs.m_PlaceboNvRtxHdrEnabled); m_pDS->exec(strSQL2); }
 		if(list [i] == "PlaceboNvRtxDisableScalers") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboNvRtxDisableScalers            bool NOT NULL DEFAULT %i", vs.m_PlaceboNvRtxDisableScalers); m_pDS->exec(strSQL2); }
 		if(list [i] == "PlaceboDolbyVisionEnabled") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboDolbyVisionEnabled              bool NOT NULL DEFAULT %i", vs.m_PlaceboDolbyVisionEnabled); m_pDS->exec(strSQL2); }
+		if(list [i] == "PlaceboHdr10PlusEnabled") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboHdr10PlusEnabled                  bool NOT NULL DEFAULT %i", vs.m_PlaceboHdr10PlusEnabled); m_pDS->exec(strSQL2); }
 
 		if (list[i] == "PlaceboSdrTargetContrast") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboSdrTargetContrast                integer NOT NULL DEFAULT %i", vs.m_PlaceboSdrTargetContrast); m_pDS->exec(strSQL2); }
 		if (list[i] == "PlaceboTargetColorspaceHint") { strSQL2 = PrepareSQL("ALTER TABLE settings ADD COLUMN PlaceboTargetColorspaceHint          integer NOT NULL DEFAULT %i", vs.m_PlaceboTargetColorspaceHint); m_pDS->exec(strSQL2); }
@@ -5834,6 +5836,7 @@ bool CVideoDatabase::GetVideoSettings(int idFile, CVideoSettings &settings)
 		settings.m_PlaceboNvRtxHdrEnabled = m_pDS->fv("PlaceboNvRtxHdrEnabled").get_asBool();
 		settings.m_PlaceboNvRtxDisableScalers = m_pDS->fv("PlaceboNvRtxDisableScalers").get_asBool();
 		settings.m_PlaceboDolbyVisionEnabled = m_pDS->fv("PlaceboDolbyVisionEnabled").get_asBool();
+		settings.m_PlaceboHdr10PlusEnabled = m_pDS->fv("PlaceboHdr10PlusEnabled").get_asBool();
 		settings.m_PlaceboSdrTargetContrast = m_pDS->fv("PlaceboSdrTargetContrast").get_asInt();
 		settings.m_PlaceboTargetColorspaceHint = m_pDS->fv("PlaceboTargetColorspaceHint").get_asInt();
         settings.m_PlaceboTargetColorspaceHintMode = m_pDS->fv("PlaceboTargetColorspaceHintMode").get_asInt();
@@ -6067,7 +6070,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
         strSQL = PrepareSQL(
           "update settings set "
           "SubtitleVerticalPosition=%i,PlaceboSkinZoom=%i,PlaceboSkinZoomPosition=%i,PlaceboLutFilename='%s',PlaceboDisplayHdrPeakLuminance=%f,PlaceboDisplaySdrPeakLuminance=%f,"
-		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboDolbyVisionEnabled=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
+		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboDolbyVisionEnabled=%i,PlaceboHdr10PlusEnabled=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
 		  "PlaceboFrameMixerRadiusFactor=%f,PlaceboFrameMixerBypassQueue=%i,PlaceboCropBottom=%i,PlaceboBrightnessSdrSdr=%f,PlaceboContrastSdrSdr=%f,PlaceboBrightnessHdrHdr=%f,PlaceboContrastHdrHdr=%f,PlaceboBrightnessHdrSdr=%f,PlaceboContrastHdrSdr=%f,PlaceboBrightnessSdrHdr=%f,PlaceboContrastSdrHdr=%f,"
 		  "PlaceboVsrGammaCorrection=%f,PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
 		  "PlaceboSdrColorMapIntent='%s',PlaceboSdrColorMapGamutMapping='%s',PlaceboSdrColorMapToneMapping='%s',PlaceboSdrToneConstantExposure=%f,PlaceboSdrToneConstantKneeAdaptation=%f,PlaceboSdrToneConstantKneeDefault=%f,PlaceboSdrToneConstantKneeMaximum=%f,"
@@ -6111,6 +6114,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		  settings.m_PlaceboNvRtxHdrEnabled,
 		  settings.m_PlaceboNvRtxDisableScalers,
 		  settings.m_PlaceboDolbyVisionEnabled,
+		  settings.m_PlaceboHdr10PlusEnabled,
 		  settings.m_PlaceboSdrTargetContrast,
 		  settings.m_PlaceboTargetColorspaceHint,
           settings.m_PlaceboTargetColorspaceHintMode,
@@ -6293,7 +6297,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		strSQL = PrepareSQL(
 		  "update settings set "
 		  "SubtitleVerticalPosition=%i,PlaceboSkinZoom=%i,PlaceboSkinZoomPosition=%i,PlaceboLutFilename='%s',PlaceboDisplayHdrPeakLuminance=%f,PlaceboDisplaySdrPeakLuminance=%f,"
-		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboDolbyVisionEnabled=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
+		  "PlaceboTargetContrast=%i,PlaceboNvRtxPipelineEnabled1=%i,PlaceboNvSuperResolutionEnabled=%i,PlaceboNvRtxHdrEnabled=%i,PlaceboNvRtxDisableScalers=%i,PlaceboDolbyVisionEnabled=%i,PlaceboHdr10PlusEnabled=%i,PlaceboSdrTargetContrast=%i,PlaceboTargetColorspaceHint=%i,PlaceboTargetColorspaceHintMode=%i,"
 		  "PlaceboFrameMixerRadiusFactor=%f,PlaceboFrameMixerBypassQueue=%i,PlaceboCropBottom=%i,PlaceboBrightnessSdrSdr=%f,PlaceboContrastSdrSdr=%f,PlaceboBrightnessHdrHdr=%f,PlaceboContrastHdrHdr=%f,PlaceboBrightnessHdrSdr=%f,PlaceboContrastHdrSdr=%f,PlaceboBrightnessSdrHdr=%f,PlaceboContrastSdrHdr=%f,"
 		  "PlaceboVsrGammaCorrection=%f,PlaceboDitherDepth=%i,PlaceboShaderApply=%i,PlaceboUseHdrForSdr=%i,PlaceboColorAdjustmentEnabled=%i,PlaceboSaturation=%f,PlaceboSdrSaturation=%f,PlaceboSdrColorMapInverseToneMapping=%i,PlaceboSdrColorMapGamutExpansion=%i,"
 		  "PlaceboSdrColorMapIntent='%s',PlaceboSdrColorMapGamutMapping='%s',PlaceboSdrColorMapToneMapping='%s',PlaceboSdrToneConstantExposure=%f,PlaceboSdrToneConstantKneeAdaptation=%f,PlaceboSdrToneConstantKneeDefault=%f,PlaceboSdrToneConstantKneeMaximum=%f,"
@@ -6337,6 +6341,7 @@ void CVideoDatabase::SetVideoSettings(int idFile, const CVideoSettings &settings
 		  settings.m_PlaceboNvRtxHdrEnabled,
 		  settings.m_PlaceboNvRtxDisableScalers,
 		  settings.m_PlaceboDolbyVisionEnabled,
+		  settings.m_PlaceboHdr10PlusEnabled,
 		  settings.m_PlaceboSdrTargetContrast,
 		  settings.m_PlaceboTargetColorspaceHint,
 		  settings.m_PlaceboTargetColorspaceHintMode,

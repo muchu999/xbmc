@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2017-2019 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -61,7 +61,7 @@ public:
   explicit CRenderBufferImpl(AVPixelFormat av_pix_format, unsigned width, unsigned height);
   ~CRenderBufferImpl();
 
-  void AppendPicture(const VideoPicture& picture) override;
+  void AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings = nullptr) override;
   unsigned GetViewCount() const override;
   ID3D11View* GetView(unsigned viewIdx) override;
   void ReleasePicture() override;

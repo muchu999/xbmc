@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2025 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -109,7 +109,7 @@ void CRendererPL::AddVideoPicture(const VideoPicture& picture, int index)
 {
   if (m_renderBuffers[index])
   {
-	m_renderBuffers[index]->AppendPicture(picture);
+	m_renderBuffers[index]->AppendPicture(picture, &m_videoSettings);
 	//m_renderBuffers[index]->frameIdx = index;
 	m_renderBuffers [index]->frameIdx = m_frameIdx;
 	m_frameIdx += 2;
@@ -353,23 +353,36 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
 	, pl_color_system_name(m_videoMatrix));
   
   info.render1 = StringUtils::Format("Display maxLuma: {:.0f}, maxFALL: {:.0f}",plbuffer->m_OutputDesc1.MaxLuminance, plbuffer->m_OutputDesc1.MaxFullFrameLuminance);
-  info.render2 = StringUtils::Format("HDR10PlusMetadata:");
+  info.render2 = StringUtils::Format("HDR10+: ");
   if(plbuffer->hasHDR10PlusMetadata)
   {
-	info.render2 += StringUtils::Format(" light (meta): min luma: {:.4f}, max luma: {:.0f}", hdr.min_luma, hdr.max_luma);
-	info.render2 += StringUtils::Format(", max CLL: {}, max FALL: {}", hdr.max_cll, hdr.max_fall);
+	info.render2 += StringUtils::Format("min luma: {:.4g}, max luma: {:.0f}, maxCLL: {:6.2f}, maxFALL: {:6.2f}, sceneMaxR: {:6.2f}, sceneMaxG: {:6.2f}, sceneMaxB: {:6.2f}, sceneAvg: {:6.2f}",
+	  plbuffer->m_Hdr10PlusColorSpace.hdr.min_luma, plbuffer->m_Hdr10PlusColorSpace.hdr.max_luma, plbuffer->m_Hdr10PlusColorSpace.hdr.max_cll, plbuffer->m_Hdr10PlusColorSpace.hdr.max_fall,
+	  plbuffer->m_Hdr10PlusColorSpace.hdr.scene_max[0], plbuffer->m_Hdr10PlusColorSpace.hdr.scene_max [1], plbuffer->m_Hdr10PlusColorSpace.hdr.scene_max [2], plbuffer->m_Hdr10PlusColorSpace.hdr.scene_avg);
+  }
+  info.render2b = StringUtils::Format("DV: ");
+  if(plbuffer->hasDoviMetadata)
+  {
+	info.render2b += StringUtils::Format("min luma: {:.4g}, max luma: {:.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}", plbuffer->m_DoviColorSpace.hdr.min_luma, plbuffer->m_DoviColorSpace.hdr.max_luma, Pq2nit(plbuffer->m_DoviColorSpace.hdr.max_pq_y), Pq2nit(plbuffer->m_DoviColorSpace.hdr.avg_pq_y)); //, plbuffer->m_DoviColorSpace.hdr.min_luma, plbuffer->m_DoviColorSpace.hdr.max_luma, plbuffer->m_DoviColorSpace.hdr.max_cll, plbuffer->m_DoviColorSpace.hdr.max_fall);
   }
 
-  info.render3 = StringUtils::Format("FrameIn maxLuma: {:5.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}, Out minLuma: {:.4f}, maxLuma: {:5.0f}",
-	plbuffer->m_FrameInColor.hdr.max_luma,
-	Pq2nit(plbuffer->m_FrameInColor.hdr.max_pq_y),
-	Pq2nit(plbuffer->m_FrameInColor.hdr.avg_pq_y),
-	plbuffer->m_FrameOutColor.hdr.min_luma,
-    plbuffer->m_FrameOutColor.hdr.max_luma);
-
-  info.render4 = StringUtils::Format("PeakDetect:");
+  info.render3 = StringUtils::Format("PeakDetect:");
   if(plbuffer->m_bHasPeakDetectMetadata)
-    info.render4 += StringUtils::Format(" maxPqy: {:6.2f}, avgPqy: {:6.2f}", Pq2nit(plbuffer->m_PeakDetectMetadata.max_pq_y), Pq2nit(plbuffer->m_PeakDetectMetadata.avg_pq_y));
+	info.render3 += StringUtils::Format(" maxPqy: {:6.2f}, avgPqy: {:6.2f}", Pq2nit(plbuffer->m_PeakDetectMetadata.max_pq_y), Pq2nit(plbuffer->m_PeakDetectMetadata.avg_pq_y));
+
+  info.render4a = StringUtils::Format("FrameIn minLuma: {:.4g}, maxLuma: {:.0f}, maxCLL: {:6.2f}, maxFALL: {:6.2f}, sceneMaxR: {:6.2f}, sceneMaxG: {:6.2f}, sceneMaxB: {:6.2f}, sceneAvg: {:6.2f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}",
+	plbuffer->m_FrameInColor.hdr.min_luma,
+	plbuffer->m_FrameInColor.hdr.max_luma,
+	plbuffer->m_FrameInColor.hdr.max_cll, plbuffer->m_FrameInColor.hdr.max_fall,
+	plbuffer->m_FrameInColor.hdr.scene_max [0], plbuffer->m_FrameInColor.hdr.scene_max [1], plbuffer->m_FrameInColor.hdr.scene_max [2], plbuffer->m_FrameInColor.hdr.scene_avg,
+    Pq2nit(plbuffer->m_FrameInColor.hdr.max_pq_y),
+	Pq2nit(plbuffer->m_FrameInColor.hdr.avg_pq_y));
+
+  info.render4b = StringUtils::Format("FrameOut minLuma: {:.4g}, maxLuma: {:5.0f}",
+	plbuffer->m_FrameOutColor.hdr.min_luma,
+	plbuffer->m_FrameOutColor.hdr.max_luma);
+
+
 
   pl_queue q = *PL::PLInstance::Get()->GetQueue();
   info.render5 = StringUtils::Format("ScreenFps: {:.3f}, LPvps:{:.3f}, SourceFps: {:.3f}({:1}), LPfps: {:.3f}, ", m_ScreenFps, pl_queue_estimate_vps(q), m_fps, plbuffer->pictureFlags & DVP_FLAG_INTERLACED ? "i" : "p", pl_queue_estimate_fps(q));
@@ -886,11 +899,6 @@ void CRendererPL::InitializeFrameInFieldsMix(CVideoSettings& vs, pl_frame* frame
   {
 	if(frameIn->repr.sys == PL_COLOR_SYSTEM_UNKNOWN)
 	  frameIn->repr.sys = PL_COLOR_SYSTEM_BT_709;
-  }
-  if(!vs.m_PlaceboDolbyVisionEnabled)
-  {
-	frameIn->color.hdr.max_pq_y = 0;
-	frameIn->color.hdr.avg_pq_y = 0;
   }
 
   frameIn->num_planes = buffer->plFormat.num_planes;
@@ -1993,7 +2001,7 @@ void CRendererPL::CRenderBufferImpl::ReleasePicture()
   CRenderBuffer::ReleasePicture();
 }
 
-void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
+void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings)
 {
   CLog::LogFC(LOGDEBUG, LOGPLACEBO, "index:{}, pts:{:.0f}", this->frameIdx, picture.pts);
   
@@ -2001,7 +2009,7 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
   hdrDoviRpu = picture.hdrDoviRpu;
   hdrMetadata = picture.hdrMetadata;
   doviMetadata = picture.doviMetadata;
-  doviColorSpace = picture.doviColorSpace;
+  m_DoviColorSpace = picture.doviColorSpace;
   doviColorRepr = picture.doviColorRepr;
   doviPlMetadata = picture.doviPlMetadata;
   disable_residual_flag = picture.disable_residual_flag;
@@ -2033,12 +2041,16 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture)
 	metadata.clm = &lightMetadata;
 	metadata.mdm = &displayMetadata;
 	metadata.dhp = &hdrMetadata;
-	pl_map_hdr_metadata(&m_ColorSpace.hdr, &metadata);
+	pl_map_hdr_metadata(&m_Hdr10PlusColorSpace.hdr, &metadata);
+	if(pVideoSettings->m_PlaceboHdr10PlusEnabled)
+	{
+		m_ColorSpace.hdr = m_Hdr10PlusColorSpace.hdr;
+	}
   }
-  if(hasDoviMetadata)
+  if(hasDoviMetadata &&  disable_residual_flag)
   {
-	if(disable_residual_flag)
-	  m_ColorSpace = doviColorSpace;
+	if(pVideoSettings->m_PlaceboDolbyVisionEnabled)
+	  m_ColorSpace = m_DoviColorSpace;
   }
 }
 
@@ -2184,7 +2196,10 @@ void CRendererPL::RenderStart(CRenderBuffer* buffer, const CRect& sourceRect, co
 	}
 
 	//cl Create software upload target, could first check if we need it...
-	CreateSoftwareUploadTarget(buf, buf->m_pictureWidth, buf->m_pictureHeight);
+	if(buf->videoBuffer->GetFormat() != AV_PIX_FMT_D3D11VA_VLD)
+	{
+	  CreateSoftwareUploadTarget(buf, buf->m_pictureWidth, buf->m_pictureHeight);
+	}
   }
   else
   {

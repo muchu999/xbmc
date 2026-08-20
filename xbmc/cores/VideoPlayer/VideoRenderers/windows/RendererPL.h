@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (C) 2025 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -276,12 +276,12 @@ public:
   ~CRenderBufferImpl();
 
 
-  void AppendPicture(const VideoPicture& picture) override;
+  void AppendPicture(const VideoPicture& picture, CVideoSettings* pVideoSettings) override;
   bool GetLibplaceboFrame(pl_frame& frame);
   bool map_frame(pl_gpu gpu, pl_tex* tex, struct pl_source_frame* src, struct pl_frame* out_frame);
   double getPts() { return pts; }
   bool HasHdrData();
-  pl_color_space doviColorSpace = {}; //< pl_color_space
+  pl_color_space m_DoviColorSpace = {}; //< pl_color_space
   pl_color_space m_ColorSpace = {}; //< pl_color_space
   pl_color_repr doviColorRepr = {};
   pl_dovi_metadata doviPlMetadata = {};
@@ -293,6 +293,7 @@ public:
   AVDOVIDmData doviExt{ 0 };
   bool hasDoviExt = false;
   bool m_NeedFrame = false;
+  pl_color_space m_Hdr10PlusColorSpace = {};
   pl_chroma_location m_chromaLocation = PL_CHROMA_UNKNOWN;
 
   // For debugInfo
