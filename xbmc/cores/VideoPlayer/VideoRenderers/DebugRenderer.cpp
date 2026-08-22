@@ -106,6 +106,9 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render,
 
   std::string dummy = "-";
   addSub(dummy, 0., 5000000.);
+  addSub(video.videoSource, 0., 5000000.);
+  addSub(video.metaPrim, 0., 5000000.);
+  addSub(video.metaLight, 0., 5000000.);
   addSub(render.renderFlags, 0., 5000000.);
   addSub(render.videoOutput, 0., 5000000.);
   addSub(video.shader, 0., 5000000.);
