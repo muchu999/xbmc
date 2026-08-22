@@ -1353,6 +1353,8 @@ void DX::DeviceResources::HandleDeviceLost(bool removed)
 
 CPLHelper::CMonitor m_SignalFrameReadyMonitor(120);
 CPLHelper::CMonitor m_guiComposeTimeMonitor(120);
+CPLHelper::CMonitor m_PtlWaitTime(120);
+CPLHelper::CMonitor m_PtlPeriod(120);
 
 bool DX::DeviceResources::Begin()
 {
@@ -2151,10 +2153,16 @@ DEBUG_INFO_RENDER DX::DeviceResources::GetDebugInfo()
 
   double meanv, varv, minv, maxv;;
   double meanv2, varv2, minv2, maxv2;;
+  double meanv3, varv3, minv3, maxv3;;
+  double meanv4, varv4, minv4, maxv4;;
   m_queueDepthTracker.calculateAll(meanv, varv, minv, maxv);
   m_SignalFrameReadyMonitor.calculateAll(meanv2, varv2, minv2, maxv2);
+  m_PtlWaitTime.calculateAll(meanv3, varv3, minv3, maxv3);
+  m_PtlPeriod.calculateAll(meanv4, varv4, minv4, maxv4);
   info.queue = StringUtils::Format("Queue Depth Min/Max: {:2.0f} / {:2.0f}, mean: {:4.1f}, cadence drop: {}", minv, maxv, meanv, cadenceDropCount);
   info.judder = StringUtils::Format("Main Loop time: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv2 * 1000.0, maxv2 * 1000.0, meanv2 * 1000.0, std::sqrt(varv2) * 1000.0);
+  info.ptlWaitTime = StringUtils::Format("PTL wait time: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv3 * 1000.0, maxv3 * 1000.0, meanv3 * 1000.0, std::sqrt(varv3) * 1000.0);
+  info.ptlPeriod = StringUtils::Format("PTL period: Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv4 * 1000.0, maxv4 * 1000.0, meanv4 * 1000.0, std::sqrt(varv4) * 1000.0);
 
   m_guiComposeTimeMonitor.calculateAll(meanv, varv, minv, maxv);
   info.guiComposeTime = StringUtils::Format("Render time (G) Min/Max: {:0>5.2f} / {:0>5.2f}, mean: {:0>5.2f}, stdDev: {:0>5.2f}", minv*1000.0, maxv*1000.0, meanv*1000.0, std::sqrt(varv) * 1000.0);
@@ -2355,7 +2363,15 @@ void DX::DeviceResources::PresentThreadLoop()
 
 	if(m_latencyWaitableObject)
 	{
+	  static UINT64 previousEnd = 0;
+	  UINT64 start = CurrentHostCounter();
 	  DWORD waitResult = ::WaitForSingleObject(m_latencyWaitableObject, 400);
+	  UINT64 end = CurrentHostCounter();
+	  float duration = (end - start) / (float) CurrentHostFrequency();
+	  float period = (end - previousEnd) / (float) CurrentHostFrequency();
+	  m_PtlWaitTime.update(duration);
+	  m_PtlPeriod.update(period);
+	  previousEnd = end;
 
 	  if(!m_presentRunning.load(std::memory_order_acquire))
 		break;

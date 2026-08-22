@@ -46,4 +46,6 @@ struct DEBUG_INFO_RENDER
   std::string queue;
   std::string judder;
   std::string guiComposeTime;
+  std::string ptlWaitTime;
+  std::string ptlPeriod;
 };

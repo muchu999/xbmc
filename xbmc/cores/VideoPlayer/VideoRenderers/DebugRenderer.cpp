@@ -119,6 +119,8 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render,
   addSub(video.render5, 0., 5000000.);
   addSub(video.render6, 0., 5000000.);
   addSub(render.queue, 0., 5000000.);
+  addSub(render.ptlWaitTime, 0., 5000000.);
+  addSub(render.ptlPeriod, 0., 5000000.);
   addSub(render.judder, 0., 5000000.);
   addSub(render.guiComposeTime, 0., 5000000.);
   addSub(video.render7, 0., 5000000.);
