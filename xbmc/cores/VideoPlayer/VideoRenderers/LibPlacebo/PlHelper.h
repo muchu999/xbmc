@@ -174,6 +174,7 @@ public:
 	size_t maxFrames = 0;
 	bool bufferFull = false;
 	size_t skipCount = 0;
+	mutable std::mutex mtx;
 
 	// Helper to get active frame count in the buffer
 	size_t getActiveCount() const {
@@ -186,6 +187,7 @@ public:
 	}
 
 	void update(double jitterUs) {
+	  std::lock_guard<std::mutex> lock(mtx);
 	  if(skipCount < 20)
 	  {
 		skipCount++;
@@ -201,7 +203,15 @@ public:
 	}
 
 	void calculateAll(double& mean, double& var, double& min, double& max) {
-	  size_t count = getActiveCount();
+	  size_t count;
+	  std::vector<double> localCopy;
+
+	  {
+		std::lock_guard<std::mutex> lock(mtx);
+		localCopy = history;
+		count = getActiveCount();
+	  }
+
 	  if(count ==0)
 	  {
 		mean = 0;
@@ -212,15 +222,15 @@ public:
 	  }
 
 	  double sum = 0.0;
-	  double maxVal = history [0];
-	  double minVal = history [0];
+	  double maxVal = localCopy [0];
+	  double minVal = localCopy [0];
 
 	  double current_mean = 0.0;
 	  double M2 = 0.0; // Tracks sum of squared differences dynamically
 
 	  for(size_t i = 0; i < count; ++i)
 	  {
-		double x = history [i];
+		double x = localCopy [i];
 
 		if(x > maxVal) maxVal = x;
 		if(x < minVal) minVal = x;
@@ -239,6 +249,7 @@ public:
 	}
 
 	double calculateVariance(double& mean) {
+	  std::lock_guard<std::mutex> lock(mtx);
 	  size_t count = getActiveCount();
 	  if(count < 2) return 0.0;
 
@@ -257,6 +268,7 @@ public:
 	}
 
 	double calculatePeak() const {
+	  std::lock_guard<std::mutex> lock(mtx);
 	  size_t count = getActiveCount();
 	  if(count == 0) return 0.0;
 
@@ -270,6 +282,7 @@ public:
 	}
 
 	double calculateMin() const {
+	  std::lock_guard<std::mutex> lock(mtx);
 	  size_t count = getActiveCount();
 	  if(count == 0) return 0.0;
 
@@ -284,11 +297,11 @@ public:
 
 
 	void reset(void) {
+	  std::lock_guard<std::mutex> lock(mtx);
 	  writeIndex = 0;
 	  skipCount = 0;
 	  bufferFull = false;
 	}
   };
-
 };
 
