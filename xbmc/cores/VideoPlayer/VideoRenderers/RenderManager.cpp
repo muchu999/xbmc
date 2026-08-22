@@ -1316,10 +1316,10 @@ void CRenderManager::PrepareNextRender()
       m_videoDelay -
       static_cast<double>(CServiceBroker::GetWinSystem()->GetFrameLatencyAdjustment()));
 
-  const bool isPaused = m_dvdClock.IsPaused();
-  double renderPts = frameOnScreen;
-  if(!isPaused)
-	renderPts += m_displayLatency;
+  //const bool isPaused = m_dvdClock.IsPaused();
+  double renderPts = frameOnScreen + m_displayLatency;
+  //if(!isPaused)
+	//renderPts += m_displayLatency;
 
   const double nextFramePts =
 	m_dvdClock.GetClockSpeed() < 0 ? renderPts : m_Queue [m_queued.front()].pts;
@@ -1342,8 +1342,8 @@ void CRenderManager::PrepareNextRender()
 		m_clockSync.m_errCount = 0;
 		m_dvdClock.SetVsyncAdjust(-average); //cl for audio sync, the actual value is not used, just a test if it's different from 0 which allows correction to take place with error calculated somewhere else
 	  }
-	  if(!isPaused)
-		renderPts += frametime / 2 - m_clockSync.m_syncOffset;
+	  //if(!isPaused)
+		//renderPts += frametime / 2 - m_clockSync.m_syncOffset;
 	}
   }
   else
