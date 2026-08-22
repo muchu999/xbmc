@@ -2313,7 +2313,8 @@ void DX::DeviceResources::PresentThreadLoop()
   ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
   Microsoft::WRL::ComPtr<ID3D11Multithread> pMultithread;
-  if(FAILED(m_d3dContext.As(&pMultithread))) return;
+  if(FAILED(m_d3dContext.As(&pMultithread)))
+	return;
 
   while(m_presentRunning.load(std::memory_order_acquire))
   {
@@ -2324,7 +2325,8 @@ void DX::DeviceResources::PresentThreadLoop()
 		|| !m_presentRunning.load(std::memory_order_acquire);
 	  });
 
-	if(!m_presentRunning.load(std::memory_order_acquire)) break;
+	if(!m_presentRunning.load(std::memory_order_acquire))
+	  break;
 	lock.unlock(); // Release CPU lock immediately
 
 	FramePackage localPackage;
@@ -2337,7 +2339,11 @@ void DX::DeviceResources::PresentThreadLoop()
 	  }
 	} // Lock drops here. Application Thread wakes up safely now!
 
-	if(!localPackage.CommandList) continue; // Skip pass if queue was drained
+	if(!localPackage.CommandList)
+	{
+	  //CLog::LogF(LOGDEBUG, "NULL CommandList");
+	  continue; // Skip pass if queue was drained
+	}
 
 	if(!m_swapChain)
 	{
@@ -2349,9 +2355,10 @@ void DX::DeviceResources::PresentThreadLoop()
 
 	if(m_latencyWaitableObject)
 	{
-	  DWORD waitResult = ::WaitForSingleObject(m_latencyWaitableObject, 100);
+	  DWORD waitResult = ::WaitForSingleObject(m_latencyWaitableObject, 400);
 
-	  if(!m_presentRunning.load(std::memory_order_acquire)) break;
+	  if(!m_presentRunning.load(std::memory_order_acquire))
+		break;
 
 	  if(waitResult == WAIT_FAILED || waitResult == WAIT_ABANDONED)
 	  {
@@ -2363,16 +2370,30 @@ void DX::DeviceResources::PresentThreadLoop()
 		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		if(localPackage.CommandList)
+		{
+		  localPackage.CommandList.Reset();
+		  localPackage.ResourceLifelines.clear();
+		}
+
 		continue;
 	  }
 
 	  if(waitResult == WAIT_TIMEOUT)
 	  {
+
+		//CLog::LogF(LOGDEBUG, "WAIT_TIMEOUT");
+		if(localPackage.CommandList)
+		{
+		  localPackage.CommandList.Reset();
+		  localPackage.ResourceLifelines.clear();
+		}
 		continue;
 	  }
 	}
 
-	if(!m_presentRunning.load(std::memory_order_acquire)) break;
+	if(!m_presentRunning.load(std::memory_order_acquire))
+	  break;
 
 	// --- FIX 1 & 2: RECONCILED HARDWARE COMMAND LIST INTERFACE ---
 	if(localPackage.CommandList)
