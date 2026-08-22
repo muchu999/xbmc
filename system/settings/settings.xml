@@ -150,7 +150,7 @@
       <group id="3" label="14231">
         <setting id="videoplayer.rendermethod" type="integer" label="13415" help="36153">
           <level>2</level>
-          <default>0</default> <!-- RENDER_METHOD_AUTO -->
+          <default>5</default> 
           <constraints>
             <options>rendermethods</options>
           </constraints>
@@ -380,7 +380,7 @@
 	  <group id="6" label="55327">
 		<setting id="videoplayer.libplacebosavetodb" type="boolean" label="55328" help="55329">
 		  <level>3</level>
-		  <default>false</default>
+		  <default>true</default>
 		  <control type="toggle" />
 		</setting>
 	  </group>

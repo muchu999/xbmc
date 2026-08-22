@@ -248,8 +248,8 @@ void CVideoSettings::ResetSdrToHdrSettings(PlOptionsWrapper::reset_type type)
   m_PlaceboDisplaySdrPeakLuminance = 480;
   m_PlaceboTargetContrast = -1;
   m_PlaceboNvRtxPipelineEnabled = (int) SettinglibPlaceboNvRtxPipelineEnabled::AUTO;
-  m_PlaceboNvSuperResolutionEnabled = false;
-  m_PlaceboNvRtxHdrEnabled = false;
+  m_PlaceboNvSuperResolutionEnabled = true;
+  m_PlaceboNvRtxHdrEnabled = true;
   m_PlaceboNvRtxDisableScalers = true;
   m_PlaceboDolbyVisionEnabled = true;
   m_PlaceboHdr10PlusEnabled = true;
