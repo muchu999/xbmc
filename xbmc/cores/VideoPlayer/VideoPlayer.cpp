@@ -5804,6 +5804,7 @@ void CVideoPlayer::SetVideoSettings(CVideoSettings& settings)
                                               settings.m_subtitleVerticalPositionSave);
   m_VideoPlayerVideo->EnableSubtitle(settings.m_SubtitleOn);
   m_VideoPlayerVideo->SetSubtitleDelay(static_cast<int>(-settings.m_SubtitleDelay * DVD_TIME_BASE));
+  SetRenderViewMode(settings.m_ViewMode, settings.m_CustomZoomAmount, settings.m_CustomPixelRatio, settings.m_CustomVerticalShift, settings.m_CustomNonLinStretch);
 }
 
 void CVideoPlayer::FrameMove()
