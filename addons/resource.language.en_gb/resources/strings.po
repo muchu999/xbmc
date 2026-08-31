@@ -25950,7 +25950,7 @@ msgid "  Video HDR"
 msgstr ""
 
 msgctxt "#55388"
-msgid "RTX video pipeline (req. mixing disabled, bypass queueing)"
+msgid "RTX video pipeline (req. mixing disabled, bypass queuing)"
 msgstr ""
 
 msgctxt "#55389"
@@ -25974,10 +25974,13 @@ msgid "  VSR gamma correction"
 msgstr ""
 
 msgctxt "#55394"
-msgid "Use Dolby Vision luminance if available instead of peak detection"
+msgid "Use Dolby Vision luminance metadata if available"
 msgstr ""
 
 msgctxt "#55395"
-msgid "Use HDR10+ luminance if available instead of peak detection"
+msgid "Use HDR10+ luminance metadata if available"
 msgstr ""
 
+msgctxt "#55396"
+msgid "Restore this file's settings to default"
+msgstr ""

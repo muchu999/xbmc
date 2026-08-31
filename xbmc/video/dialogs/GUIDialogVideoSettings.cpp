@@ -105,9 +105,10 @@ using namespace XFILE;
 
 #define SETTING_VIDEO_LIBPLACEBO          "video.libplacebo"
 
-#define SETTING_VIDEO_MAKE_DEFAULT        "video.save"
-#define SETTING_VIDEO_CALIBRATION         "video.calibration"
-#define SETTING_VIDEO_STREAM              "video.stream"
+#define SETTING_VIDEO_MAKE_DEFAULT          "video.save"
+#define SETTING_VIDEO_RESET_FILE_TO_DEFAULT "video.reset_file_to_default"
+#define SETTING_VIDEO_CALIBRATION           "video.calibration"
+#define SETTING_VIDEO_STREAM                "video.stream"
 
 #define SETTING_LIB_PLACEBO_SKIN_ZOOM             "video.libplacebo.skin_zoom"
 #define SETTING_LIB_PLACEBO_SKIN_ZOOM_POSITION     "video.libplacebo.skin_zoom_position"
@@ -1437,6 +1438,10 @@ void CGUIDialogVideoSettings::OnSettingAction(const std::shared_ptr<const CSetti
   {
 	Save();
   }
+  else if(settingId == SETTING_VIDEO_RESET_FILE_TO_DEFAULT)
+  {
+	ResetToDefault(vs);
+  }
   else if (settingId == SETTING_LIB_PLACEBO_LOAD_PRESET_DEFAULT)
   {
 	if (CGUIDialogYesNo::ShowAndGetInput(CVariant(55231), CVariant(55339)))
@@ -1646,6 +1651,26 @@ bool CGUIDialogVideoSettings::Save()
 	CMediaSettings::GetInstance().GetDefaultVideoSettings().m_SubtitleStream = -1;
 	CMediaSettings::GetInstance().GetDefaultVideoSettings().m_AudioStream = -1;
 	CServiceBroker::GetSettingsComponent()->GetSettings()->Save();
+  }
+  return true;
+}
+
+bool CGUIDialogVideoSettings::ResetToDefault(CVideoSettings& vs)
+{
+  // prompt user if they are sure
+  if(CGUIDialogYesNo::ShowAndGetInput(CVariant(55396), CVariant(12377)))
+  {
+	// reset the settings
+	//cl could also erase from database...
+	auto& components = CServiceBroker::GetAppComponents();
+	const auto appPlayer = components.GetComponent<CApplicationPlayer>();
+
+	vs = CMediaSettings::GetInstance().GetDefaultVideoSettings();
+	vs.m_PlaceboSkinZoomHint = vs.m_PlaceboSkinZoom;
+	appPlayer->SetVideoSettings(vs);
+	CGUIMessage msg(GUI_MSG_NOTIFY_ALL, 0, 0, GUI_MSG_WINDOW_RESIZE);
+	CServiceBroker::GetGUI()->GetWindowManager().SendThreadMessage(msg);
+	SetupView();
   }
   return true;
 }
@@ -1932,6 +1957,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
 
   // general settings
   AddButton(groupSaveAsDefault, SETTING_VIDEO_MAKE_DEFAULT, 12376, SettingLevel::Basic);
+  AddButton(groupSaveAsDefault, SETTING_VIDEO_RESET_FILE_TO_DEFAULT, 55396, SettingLevel::Basic);
   AddButton(groupSaveAsDefault, SETTING_VIDEO_CALIBRATION, 214, SettingLevel::Basic);
 
   // libplacebo settings
