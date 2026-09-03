@@ -27,12 +27,34 @@
 
 <h1 align="center">
   Welcome to Kodi Home Theater Software!
-  Now with Libplacebo + RTX Video HDR and Super Resolution
+  
+  Now with Libplacebo, RTX Video HDR + Super Resolution and Multithreaded Presentation Mode
 </h1>
 
-This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution (only on Video cards that supports it).
+This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution (only on video cards that supports it). In addition, a time critical priority thread now handles frame presentation to eliminate judder. 
 
 ## Options
+
+
+General settings in /Settings/Player/
+<ul>
+  <li>Presentation Mode</li>
+
+  <li>Presentation Queue Depth</li>
+
+  <li>Number of Video Buffers</li>
+
+  <li>Render Method</li>
+
+  <li>Save Libplacebo Settings to Database</li>
+</ul>
+ 
+
+Libplacebo and RTX Video settings: During video playback, press enter and go to settings at the bottom right of the screen, then Video settings. 
+<ul>
+  <li>...</li>
+</ul>
+
 
 ## License
 Kodi is **[GPLv2 licensed](LICENSE.md)**. You may use, distribute and copy it under the license terms.
