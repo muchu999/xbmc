@@ -363,8 +363,14 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
   info.render2b = StringUtils::Format("DV: ");
   if(plbuffer->hasDoviMetadata)
   {
-	info.render2b += StringUtils::Format("min luma: {:.4g}, max luma: {:.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}", plbuffer->m_DoviColorSpace.hdr.min_luma, plbuffer->m_DoviColorSpace.hdr.max_luma, Pq2nit(plbuffer->m_DoviColorSpace.hdr.max_pq_y), Pq2nit(plbuffer->m_DoviColorSpace.hdr.avg_pq_y)); //, plbuffer->m_DoviColorSpace.hdr.min_luma, plbuffer->m_DoviColorSpace.hdr.max_luma, plbuffer->m_DoviColorSpace.hdr.max_cll, plbuffer->m_DoviColorSpace.hdr.max_fall);
+	info.render2b += StringUtils::Format("min luma: {:.4g}, max luma: {:.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}", plbuffer->m_DoviColorSpace.hdr.min_luma, plbuffer->m_DoviColorSpace.hdr.max_luma, Pq2nit(plbuffer->m_DoviColorSpace.hdr.max_pq_y), Pq2nit(plbuffer->m_DoviColorSpace.hdr.avg_pq_y));
   }
+  info.render2c = StringUtils::Format("DV RPU: ");
+  if(plbuffer->hasDoviRpuMetadata)
+  {
+	info.render2c += StringUtils::Format("min luma: {:.4g}, max luma: {:.0f}, maxPqy: {:6.2f}, avgPqy: {:6.2f}", plbuffer->hdrDoviRpu.min_luma, plbuffer->hdrDoviRpu.max_luma, Pq2nit(plbuffer->hdrDoviRpu.max_pq_y), Pq2nit(plbuffer->hdrDoviRpu.avg_pq_y));
+  }
+
 
   info.render3 = StringUtils::Format("PeakDetect:");
   if(plbuffer->m_bHasPeakDetectMetadata)
@@ -407,8 +413,8 @@ DEBUG_INFO_VIDEO CRendererPL::GetDebugInfo(int idx)
   std::string srcName = "";
   if(fmtdesc)
   {
-	srcW = plbuffer->GetWidth();
-	srcH = plbuffer->GetHeight();
+	srcW = plbuffer->m_pictureWidth;
+	srcH = plbuffer->m_pictureHeight;
 	srcName = fmtdesc->name;
   }
   int softW = 0;
@@ -2047,10 +2053,12 @@ void CRendererPL::CRenderBufferImpl::AppendPicture(const VideoPicture& picture, 
 		m_ColorSpace.hdr = m_Hdr10PlusColorSpace.hdr;
 	}
   }
-  if(hasDoviMetadata &&  disable_residual_flag)
+  if(pVideoSettings->m_PlaceboDolbyVisionEnabled)
   {
-	if(pVideoSettings->m_PlaceboDolbyVisionEnabled)
-	  m_ColorSpace = m_DoviColorSpace;
+	if(hasDoviMetadata &&  disable_residual_flag)
+	    m_ColorSpace = m_DoviColorSpace;
+    if(hasDoviRpuMetadata)
+	  m_ColorSpace.hdr = hdrDoviRpu;
   }
 }
 

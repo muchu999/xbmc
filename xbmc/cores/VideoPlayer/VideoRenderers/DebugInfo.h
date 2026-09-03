@@ -29,6 +29,7 @@ struct DEBUG_INFO_VIDEO
   std::string render1;
   std::string render2;
   std::string render2b;
+  std::string render2c;
   std::string render3;
   std::string render4a;
   std::string render4b;

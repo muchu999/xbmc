@@ -116,6 +116,7 @@ void CDebugRenderer::SetInfo(DEBUG_INFO_VIDEO& video, DEBUG_INFO_RENDER& render,
   addSub(video.render1, 0., 5000000.);
   addSub(video.render2, 0., 5000000.);
   addSub(video.render2b, 0., 5000000.);
+  addSub(video.render2c, 0., 5000000.);
   addSub(video.render3, 0., 5000000.);
   addSub(video.render4a, 0., 5000000.);
   addSub(video.render4b, 0., 5000000.);
