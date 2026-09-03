@@ -55,6 +55,9 @@ Libplacebo and RTX Video settings: During video playback, press enter and go to 
   <li>...</li>
 </ul>
 
+## Branches
+
+The "MyReleases" branch is used for development and contains the latest commits
 
 ## License
 Kodi is **[GPLv2 licensed](LICENSE.md)**. You may use, distribute and copy it under the license terms.
