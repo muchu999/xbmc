@@ -25982,5 +25982,5 @@ msgid "Use HDR10+ luminance metadata if available"
 msgstr ""
 
 msgctxt "#55396"
-msgid "Restore this file's settings to default"
+msgid "Restore settings to media defaults"
 msgstr ""
