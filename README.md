@@ -22,7 +22,7 @@
   Now with Libplacebo, RTX Video HDR + Super Resolution and Multithreaded Presentation Mode
 </h1>
 
-This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution (only on video cards that supports it). In addition, a time critical priority thread now handles frame presentation to eliminate judder. 
+This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution as a pre-processing stage (only on video cards that supports it). In addition, a time critical priority thread now handles frame presentation to eliminate judder. 
 
 ## Options
 
