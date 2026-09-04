@@ -52,7 +52,7 @@ The "MyReleases" branch is used for development and contains the latest commits
 
 ## Bonus
 
-This version of Kodi automatically saves the videos resume position for the following external players: mpv, potplayer, vlc, mpc-hc and mpv-be. You have to use those names (all UC or LC, kind of reserved names) in the playercorefactory.xml. For now, hard coded web server port 8080 for vlc and 13579 for mpc, "kodi" password for vlc. You can also now use the "play using..." context menu and it will ask if you want to resume or start over
+This version of Kodi automatically saves the videos resume position for the following external players: mpv, potplayer, vlc, mpc-hc and mpc-be. You have to use those names (all UC or LC, kind of reserved names) in the playercorefactory.xml. For now, hard coded web server port 8080 for vlc and 13579 for mpc, "kodi" password for vlc. You can also now use the "play using..." context menu and it will ask if you want to resume or start over
 
 ## Forum
 
