@@ -22,7 +22,7 @@
   Now with Libplacebo, RTX Video HDR + Super Resolution and Multithreaded Presentation Mode
 </h1>
 
-This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution (only on video cards that supports it). In addition, a time critical priority thread now handles frame presentation to eliminate judder. 
+This is a fork of Kodi for Windows that incorporates the libplacebo rendering library in addition to Nvidia RTX video HDR and super resolution as a pre-processing stage (only on video cards that supports it). In addition, a time critical priority thread now handles frame presentation to eliminate judder. 
 
 ## Options
 
@@ -49,6 +49,10 @@ Libplacebo and RTX Video settings: During video playback, press enter and go to 
 ## Branches
 
 The "MyReleases" branch is used for development and contains the latest commits
+
+## Bonus
+
+This version of Kodi automatically saves the videos resume position for the following external players: mpv, potplayer, vlc, mpc-hc and mpc-be. You have to use those names (all UC or LC, kind of reserved names) in the playercorefactory.xml. For now, hard coded web server port 8080 for vlc and 13579 for mpc, "kodi" password for vlc. You can also now use the "play using..." context menu and it will ask if you want to resume or start over
 
 ## Forum
 
