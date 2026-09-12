@@ -41,6 +41,9 @@
 #include <utils/URIUtils.h>
 #include <utils/XBMCtinyxml.h>
 #include <GUIUserMessages.h>
+#include <tinyxml.h>
+#include <dialogs/GUIDialogSlider.h>
+#include <dialogs/GUIDialogOK.h>
 
 #include <GUIPassword.cpp>
 #include <Interface/StreamInfo.h>
@@ -148,6 +151,8 @@ using namespace XFILE;
 #define SETTING_LIB_PLACEBO_LOAD_PRESET_HIGH_QUALITY                "video.libplacebo.load_preset_high_quality"
 #define SETTING_LIB_PLACEBO_LOAD_FROM_FILE                          "video.libplacebo.load_from_file"
 #define SETTING_LIB_PLACEBO_SAVE_TO_FILE                            "video.libplacebo.save_to_file"
+#define SETTING_LIB_PLACEBO_PRESET_LOAD                             "video.libplacebo.preset_load"
+#define SETTING_LIB_PLACEBO_PRESET_SAVE                             "video.libplacebo.preset_save"
 #define SETTING_LIB_PLACEBO_PEAK_DETECT_LOAD_PRESET_DEFAULT         "video.libplacebo.peak_detect_load_preset_default"
 #define SETTING_LIB_PLACEBO_PEAK_DETECT_LOAD_PRESET_HIGH_QUALITY    "video.libplacebo.peak_detect_load_preset_high_quality"
 #define SETTING_LIB_PLACEBO_DEBAND_ENABLED                          "video.libplacebo.deband_enabled"
@@ -1567,6 +1572,14 @@ void CGUIDialogVideoSettings::OnSettingAction(const std::shared_ptr<const CSetti
 	appPlayer->SetVideoSettings(vs);
 	SetupView();
   }
+  else if(settingId == SETTING_LIB_PLACEBO_PRESET_SAVE)
+  {
+	SaveVideoPreset(vs);
+	}
+  else if(settingId == SETTING_LIB_PLACEBO_PRESET_LOAD)
+  {
+	LoadVideoPreset(vs);
+  }
   else if (settingId == SETTING_LIB_PLACEBO_SHADER_ADD)
   {
 	std::string path;
@@ -1673,6 +1686,79 @@ bool CGUIDialogVideoSettings::ResetToDefault(CVideoSettings& vs)
 	SetupView();
   }
   return true;
+}
+void CGUIDialogVideoSettings::SaveVideoPreset(const CVideoSettings& vs)
+{
+  //const std::shared_ptr<CProfileManager> profileManager = CServiceBroker::GetSettingsComponent()->GetProfileManager();
+  const auto& components = CServiceBroker::GetAppComponents();
+  const auto appPlayer = components.GetComponent<CApplicationPlayer>();
+
+  CXBMCTinyXML xmlDoc;
+  TiXmlElement rootElement("VideoPreset");
+  rootElement.SetAttribute(SETTING_XML_ROOT_VERSION, "1.0");
+  TiXmlNode* pNode = xmlDoc.InsertEndChild(rootElement);
+
+  if(!pNode)
+  {
+	CLog::LogF(LOGERROR, "Failed to create XML node for video preset serialization \"{}\"", rootElement.Value());
+	return;
+  }
+  std::string returnString;
+  if(!CGUIDialogNumeric::ShowAndGetSingleDigit(returnString, "Enter preset number"))
+	return;
+  if(returnString.empty())
+	return;
+  std::string fileName = "VideoPreset" + returnString + ".xml";
+  std::string filePath = URIUtils::AddFileToFolder("special://masterprofile/", fileName);
+  if(CFile::Exists(filePath))
+  {
+	if(!CGUIDialogYesNo::ShowAndGetInput(CVariant(55398), CVariant(55340)))
+	  return;
+  }
+  CMediaSettings::GetInstance().SaveVideoSettings(pNode, vs);
+  if(!xmlDoc.SaveFile(filePath))
+  {
+	CLog::LogF(LOGERROR, "Failed to save video preset to file {}", filePath);
+  }
+}
+
+void CGUIDialogVideoSettings::LoadVideoPreset(CVideoSettings& vs)
+{
+  //const std::shared_ptr<CProfileManager> profileManager = CServiceBroker::GetSettingsComponent()->GetProfileManager();
+  auto& components = CServiceBroker::GetAppComponents();
+  auto appPlayer = components.GetComponent<CApplicationPlayer>();
+
+  std::string returnString;
+  if(!CGUIDialogNumeric::ShowAndGetSingleDigit(returnString, "Enter preset number"))
+	return;
+  if(returnString.empty())
+	return;
+  std::string fileName = "VideoPreset" + returnString + ".xml";
+  std::string filePath = URIUtils::AddFileToFolder("special://masterprofile/", fileName);
+
+
+  CXBMCTinyXML xmlDoc;
+  if(!xmlDoc.LoadFile(filePath))
+  {
+	CGUIDialogOK::ShowAndGetInput(CVariant {55399}, CVariant {55400});
+	CLog::LogF(LOGERROR, "Error loading video settings from file {}", filePath);
+	return;
+  }
+
+  if(!CGUIDialogYesNo::ShowAndGetInput(CVariant(55399), CVariant(55339)))
+	return;
+
+  CLog::LogF(LOGDEBUG, "Loading video preset from {}", filePath);
+  const TiXmlElement* pElement = xmlDoc.FirstChildElement("VideoPreset");
+  if(!pElement)
+  {
+	CLog::LogF(LOGERROR, "Error loading video preset, missing <VideoPreset> element");
+	return;
+  }
+
+  CMediaSettings::GetInstance().LoadVideoSettings(pElement, vs);
+  appPlayer->SetVideoSettings(vs);
+  SetupView();
 }
 
 void CGUIDialogVideoSettings::SaveLibplaceboSettings(const CVideoSettings& vs)
@@ -1800,6 +1886,7 @@ void CGUIDialogVideoSettings::InitializeSettings()
   CreateGroup(groupVideo, category);
   CreateGroup(groupStereoscopic, category);
   CreateGroup(groupSaveAsDefault, category);
+  CreateGroup(groupPreset, category);
   CreateGroup(groupLpFile, category);
   CreateGroup(groupLpReset, category);
   CreateGroup(groupOptions, category);
@@ -1976,9 +2063,12 @@ void CGUIDialogVideoSettings::InitializeSettings()
 
 	AddSlider(groupLpFile, SETTING_LIB_PLACEBO_SKIN_ZOOM, 55333, SettingLevel::Basic, videoSettings.m_PlaceboSkinZoom, -1, -80, 1, 0, 55292, false);
 	AddSpinner(groupLpFile, SETTING_LIB_PLACEBO_SKIN_ZOOM_POSITION, 55357, SettingLevel::Basic, videoSettings.m_PlaceboSkinZoomPosition, entries);
-	AddButton(groupLpFile, SETTING_LIB_PLACEBO_SAVE_TO_FILE, 55323, SettingLevel::Basic);
-	AddButton(groupLpFile, SETTING_LIB_PLACEBO_LOAD_FROM_FILE, 55322, SettingLevel::Basic);
 
+	AddButton(groupPreset, SETTING_LIB_PLACEBO_PRESET_SAVE, 55398, SettingLevel::Basic);
+	AddButton(groupPreset, SETTING_LIB_PLACEBO_PRESET_LOAD, 55399, SettingLevel::Basic);
+
+	AddButton(groupLpReset, SETTING_LIB_PLACEBO_SAVE_TO_FILE, 55323, SettingLevel::Basic);
+	AddButton(groupLpReset, SETTING_LIB_PLACEBO_LOAD_FROM_FILE, 55322, SettingLevel::Basic);
 	AddButton(groupLpReset, SETTING_LIB_PLACEBO_LOAD_PRESET_DEFAULT, 55231, SettingLevel::Basic);
 	AddButton(groupLpReset, SETTING_LIB_PLACEBO_LOAD_PRESET_FAST, 55232, SettingLevel::Basic);
 	AddButton(groupLpReset, SETTING_LIB_PLACEBO_LOAD_PRESET_HIGH_QUALITY, 55233, SettingLevel::Basic);

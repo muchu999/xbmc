@@ -424,7 +424,17 @@
       <o mod="alt">PlayerDebugVideo</o>
       <z>AspectRatio</z>
       <zoom>AspectRatio</zoom>
-      <t>ShowSubtitles</t>
+	  <zero mod="alt">preset0</zero>
+	  <one mod="alt">preset1</one>
+	  <two mod="alt">preset2</two>
+	  <three mod="alt">preset3</three>
+	  <four mod="alt">preset4</four>
+	  <five mod="alt">preset5</five>
+	  <six mod="alt">preset6</six>
+	  <seven mod="alt">preset7</seven>
+	  <eight mod="alt">preset8</eight>
+	  <nine mod="alt">preset9</nine>
+	  <t>ShowSubtitles</t>
       <t mod="ctrl">SubtitleAlign</t>
       <subtitle>NextSubtitle</subtitle>
       <subtitle mod="longpress">ShowSubtitles</subtitle>

@@ -150,7 +150,7 @@ public:
   virtual int GetVideoStreamCount() const { return 0; }
   virtual void GetVideoStreamInfo(int streamId, VideoStreamInfo& info) const {}
   virtual void SetVideoStream(int iStream) {}
-
+  virtual void SetVideoPreset(int preset) {}
   virtual int GetPrograms(std::vector<ProgramInfo>& programs) { return 0; }
   virtual void SetProgram(int progId) {}
   virtual int GetProgramsCount() const { return 0; }

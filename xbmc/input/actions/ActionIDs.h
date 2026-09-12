@@ -519,6 +519,18 @@ constexpr const int ACTION_ANALOG_MOVE_Y_DOWN = 604;
 
 ///@}
 
+//! Libplacebo
+constexpr const int ACTION_LIBPLACEBO_PRESET_0 = 900;
+constexpr const int ACTION_LIBPLACEBO_PRESET_1 = 901;
+constexpr const int ACTION_LIBPLACEBO_PRESET_2 = 902;
+constexpr const int ACTION_LIBPLACEBO_PRESET_3 = 903;
+constexpr const int ACTION_LIBPLACEBO_PRESET_4 = 904;
+constexpr const int ACTION_LIBPLACEBO_PRESET_5 = 905;
+constexpr const int ACTION_LIBPLACEBO_PRESET_6 = 906;
+constexpr const int ACTION_LIBPLACEBO_PRESET_7 = 907;
+constexpr const int ACTION_LIBPLACEBO_PRESET_8 = 908;
+constexpr const int ACTION_LIBPLACEBO_PRESET_9 = 909;
+
 // The NOOP action can be specified to disable an input event. This is
 // useful in user keyboard.xml etc to disable actions specified in the
 // system mappings. ERROR action is used to play an error sound

@@ -760,7 +760,7 @@ bool CInputManager::ExecuteInputAction(const CAction& action)
   else
   {
     if (gui)
-      gui->GetAudioManager().PlayActionSound(action);
+      gui->GetAudioManager().PlayActionSound(action); //cl 
 
     bResult = g_application.OnAction(action);
   }

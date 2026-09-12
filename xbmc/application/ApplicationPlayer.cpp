@@ -763,6 +763,15 @@ void CApplicationPlayer::SetVideoStream(int iStream)
   }
 }
 
+void CApplicationPlayer::SetVideoPreset(int preset)
+{
+  std::shared_ptr<IPlayer> player = GetInternal();
+  if(player)
+  {
+	player->SetVideoPreset(preset);
+  }
+}
+
 void CApplicationPlayer::AddSubtitle(const std::string& strSubPath)
 {
   std::shared_ptr<IPlayer> player = GetInternal();

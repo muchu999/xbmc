@@ -40,6 +40,8 @@ protected:
   void InitializeShaderMenu(CVideoSettings& vs, const std::shared_ptr<CSettingCategory>& category);
   void AddVideoStreams(const std::shared_ptr<CSettingGroup>& group, const std::string& settingId);
   void SaveLibplaceboSettings(const CVideoSettings& vs);
+  void SaveVideoPreset(const CVideoSettings& vs);
+  void LoadVideoPreset(CVideoSettings& vs);
   bool ResetToDefault(CVideoSettings& vs);
 
   static void VideoStreamsOptionFiller(const std::shared_ptr<const CSetting>& setting,

@@ -351,6 +351,68 @@ bool CPlayerController::OnAction(const CAction &action)
         return true;
       }
 
+	  case ACTION_LIBPLACEBO_PRESET_0:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(0);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_1:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(1);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_2:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(2);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_3:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(3);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_4:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(4);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_5:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(5);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_6:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(6);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_7:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(7);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_8:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(8);
+		return true;
+	  }
+	  case ACTION_LIBPLACEBO_PRESET_9:
+	  {
+		CVideoSettings vs = appPlayer->GetVideoSettings();
+		appPlayer->SetVideoPreset(9);
+		return true;
+	  }
+
+
       case ACTION_INCREASE_PAR:
       {
         CVideoSettings vs = appPlayer->GetVideoSettings();

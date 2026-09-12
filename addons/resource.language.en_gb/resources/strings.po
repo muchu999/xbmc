@@ -25984,3 +25984,19 @@ msgstr ""
 msgctxt "#55396"
 msgid "Restore settings to media defaults"
 msgstr ""
+
+msgctxt "#55397"
+msgid "Video settings preset number"
+msgstr ""
+
+msgctxt "#55398"
+msgid "Save video settings to preset"
+msgstr ""
+
+msgctxt "#55399"
+msgid "Load video settings from preset"
+msgstr ""
+
+msgctxt "#55400"
+msgid "Error loading video settings from preset file"
+msgstr ""

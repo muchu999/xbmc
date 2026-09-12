@@ -173,6 +173,7 @@ public:
   void SetTime(int64_t time);
   void SetTotalTime(int64_t time);
   void SetVideoStream(int iStream);
+  void SetVideoPreset(int preset);
   void SetVolume(float volume);
   void SetSpeed(float speed);
   bool SupportsTempo() const;

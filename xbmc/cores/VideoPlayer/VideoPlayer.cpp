@@ -59,6 +59,7 @@
 #include "utils/URIUtils.h"
 #include "utils/Variant.h"
 #include "utils/log.h"
+#include "utils/XMLUtils.h"
 #include "video/Bookmark.h"
 #include "video/VideoInfoTag.h"
 #include "windowing/GraphicContext.h"
@@ -73,6 +74,10 @@
 #include <mutex>
 #include <ranges>
 #include <utility>
+#include <settings/lib/SettingDefinitions.h>
+#include <settings/MediaSettings.h>
+#include <utils/XBMCTinyXML.h>
+#include <tinyxml.h>
 
 using namespace KODI;
 using namespace std::chrono_literals;
@@ -6128,6 +6133,30 @@ void CVideoPlayer::SetVideoStream(int iStream)
   m_processInfo->GetVideoSettingsLocked().SetVideoStream(iStream);
   SynchronizeDemuxer();
   NotifyVideoUpdate();
+}
+
+void CVideoPlayer::SetVideoPreset(int preset)
+{
+  std::string fileName = "VideoPreset" + std::to_string(preset) + ".xml";
+  std::string filePath = URIUtils::AddFileToFolder("special://masterprofile/", fileName);
+
+  CXBMCTinyXML xmlDoc;
+  if(!xmlDoc.LoadFile(filePath))
+  {
+	CLog::LogF(LOGERROR, "Error loading video preset from file {}", filePath);
+	return;
+  }
+  CLog::LogF(LOGDEBUG, "Loading video preset from {}", filePath);
+  const TiXmlElement* pElement = xmlDoc.FirstChildElement("VideoPreset");
+  if(!pElement)
+  {
+	CLog::LogF(LOGERROR, "Error loading video preset, missing <VideoPreset> element");
+	return;
+  }
+
+  CVideoSettings settings = m_processInfo->GetVideoSettings();
+  CMediaSettings::GetInstance().LoadVideoSettings(pElement, settings);
+  SetVideoSettings(settings);
 }
 
 void CVideoPlayer::GetAudioStreamInfo(int index, AudioStreamInfo& info) const

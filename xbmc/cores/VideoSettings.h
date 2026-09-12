@@ -375,7 +375,7 @@ public:
   int m_PlaceboSkinZoom;
   int m_PlaceboSkinZoomHint;
   VS_PLACEBO_SZ_POSITION m_PlaceboSkinZoomPosition;
-  
+
   std::string m_PlaceboLutFilename;
   float m_PlaceboDisplayHdrPeakLuminance;
   float m_PlaceboDisplaySdrPeakLuminance;
@@ -558,7 +558,7 @@ public:
   // Unsaved values
   bool m_PlaceboDebugOsd = false;
   bool m_PlaceboVideoDebugOsd = false;  
-  bool m_PlaceboDebugHide = false;  
+  bool m_PlaceboDebugHide = false;
 
   std::optional<bool>
       m_isDefaultVideoSettings; //!< true: default video settings, false: video specific

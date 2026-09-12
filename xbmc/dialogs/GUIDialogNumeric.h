@@ -24,7 +24,7 @@ class CGUIDialogNumeric :
       public CGUIDialog
 {
 public:
-  enum INPUT_MODE { INPUT_TIME = 1, INPUT_DATE, INPUT_IP_ADDRESS, INPUT_PASSWORD, INPUT_NUMBER, INPUT_TIME_SECONDS };
+  enum INPUT_MODE { INPUT_TIME = 1, INPUT_DATE, INPUT_IP_ADDRESS, INPUT_PASSWORD, INPUT_NUMBER, INPUT_TIME_SECONDS, INPUT_SINGLE_DIGIT };
   CGUIDialogNumeric(void);
   ~CGUIDialogNumeric(void) override;
   bool OnMessage(CGUIMessage& message) override;
@@ -50,6 +50,7 @@ public:
   static bool ShowAndGetDate(KODI::TIME::SystemTime& date, const std::string& heading);
   static bool ShowAndGetIPAddress(std::string &IPAddress, const std::string &heading);
   static bool ShowAndGetNumber(std::string& strInput, const std::string &strHeading, unsigned int iAutoCloseTimeoutMs = 0, bool bSetHidden = false);
+  static bool ShowAndGetSingleDigit(std::string& strInput, const std::string& strHeading, unsigned int iAutoCloseTimeoutMs = 0, bool bSetHidden = false);
   static bool ShowAndGetSeconds(std::string& timeString, const std::string &heading);
 
 protected:

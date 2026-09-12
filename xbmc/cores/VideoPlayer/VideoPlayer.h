@@ -334,6 +334,7 @@ public:
   int GetVideoStreamCount() const override;
   void GetVideoStreamInfo(int streamId, VideoStreamInfo& info) const override;
   void SetVideoStream(int iStream) override;
+  void SetVideoPreset(int preset) override;
 
   int GetPrograms(std::vector<ProgramInfo>& programs) override;
   void SetProgram(int progId) override;

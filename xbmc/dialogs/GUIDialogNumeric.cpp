@@ -67,6 +67,7 @@ void CGUIDialogNumeric::OnInitWindow()
     data["type"] = "numericpassword";
     break;
   case INPUT_NUMBER:
+  case INPUT_SINGLE_DIGIT:
     data["type"] = "number";
     break;
   case INPUT_TIME_SECONDS:
@@ -210,7 +211,7 @@ void CGUIDialogNumeric::OnBackSpace()
     --m_block;
     return;
   }
-  if (m_mode == INPUT_NUMBER || m_mode == INPUT_PASSWORD)
+  if (m_mode == INPUT_NUMBER || m_mode == INPUT_PASSWORD || m_mode == INPUT_SINGLE_DIGIT)
   { // just go back one character
     if (!m_number.empty())
       m_number.erase(m_number.length() - 1);
@@ -309,7 +310,7 @@ void CGUIDialogNumeric::FrameMove()
   unsigned int end = 0;
   if (m_mode == INPUT_PASSWORD)
     strLabel.assign(m_number.length(), '*');
-  else if (m_mode == INPUT_NUMBER)
+  else if ((m_mode == INPUT_NUMBER) ||(m_mode == INPUT_SINGLE_DIGIT))
     strLabel = m_number;
   else if (m_mode == INPUT_TIME)
   { // format up the time
@@ -370,6 +371,9 @@ void CGUIDialogNumeric::OnNumber(uint32_t num)
   case INPUT_IP_ADDRESS:
     HandleInputIP(num);
     break;
+  case INPUT_SINGLE_DIGIT:
+	m_number = num + '0';
+	break;
   }
 }
 
@@ -439,7 +443,7 @@ void CGUIDialogNumeric::SetMode(INPUT_MODE mode, const std::string &initial)
       m_ip[i] = static_cast<uint8_t>(atoi(blocks[i].c_str()));
     }
   }
-  else if (m_mode == INPUT_NUMBER || m_mode == INPUT_PASSWORD)
+  else if (m_mode == INPUT_NUMBER || m_mode == INPUT_PASSWORD || m_mode == INPUT_SINGLE_DIGIT)
     m_number = initial;
 }
 
@@ -465,6 +469,7 @@ std::string CGUIDialogNumeric::GetOutputString() const
     return StringUtils::Format("{}.{}.{}.{}", m_ip[0], m_ip[1], m_ip[2], m_ip[3]);
   case INPUT_NUMBER:
   case INPUT_PASSWORD:
+  case INPUT_SINGLE_DIGIT:
     return m_number;
   }
 
@@ -548,6 +553,26 @@ bool CGUIDialogNumeric::ShowAndGetNumber(std::string& strInput, const std::strin
 
   if (!pDialog->IsAutoClosed() && (!pDialog->IsConfirmed() || pDialog->IsCanceled()))
     return false;
+  strInput = pDialog->GetOutputString();
+  return true;
+}
+bool CGUIDialogNumeric::ShowAndGetSingleDigit(std::string& strInput, const std::string& strHeading, unsigned int iAutoCloseTimeoutMs /* = 0 */, bool bSetHidden /* = false */)
+{
+  // Prompt user for password input
+  CGUIDialogNumeric* pDialog = CServiceBroker::GetGUI()->GetWindowManager().GetWindow<CGUIDialogNumeric>(WINDOW_DIALOG_NUMERIC);
+  pDialog->SetHeading(strHeading);
+
+  if(bSetHidden)
+	pDialog->SetMode(INPUT_PASSWORD, strInput);
+  else
+	pDialog->SetMode(INPUT_SINGLE_DIGIT, strInput);
+  if(iAutoCloseTimeoutMs)
+	pDialog->SetAutoClose(iAutoCloseTimeoutMs);
+
+  pDialog->Open();
+
+  if(!pDialog->IsAutoClosed() && (!pDialog->IsConfirmed() || pDialog->IsCanceled()))
+	return false;
   strInput = pDialog->GetOutputString();
   return true;
 }

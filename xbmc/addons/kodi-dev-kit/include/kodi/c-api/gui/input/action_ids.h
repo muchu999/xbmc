@@ -766,6 +766,36 @@ enum ADDON_ACTION
   /// @brief <b>`604`</b>: Analog thumbstick move, vertical axis, down; see ADDON_ACTION_ANALOG_MOVE
   ADDON_ACTION_ANALOG_MOVE_Y_DOWN = 604,
 
+  /// @brief <b>`900`</b>: Libplacebo preset 0;
+  ADDON_ACTION_LIBPLACEBO_PRESET_0 = 900,
+
+  /// @brief <b>`901`</b>: Libplacebo preset 1;
+  ADDON_ACTION_LIBPLACEBO_PRESET_1 = 901,
+
+  /// @brief <b>`902`</b>: Libplacebo preset 2;
+  ADDON_ACTION_LIBPLACEBO_PRESET_2 = 902,
+
+  /// @brief <b>`903`</b>: Libplacebo preset 3;
+  ADDON_ACTION_LIBPLACEBO_PRESET_3 = 903,
+
+  /// @brief <b>`904`</b>: Libplacebo preset 4;
+  ADDON_ACTION_LIBPLACEBO_PRESET_4 = 904,
+
+  /// @brief <b>`905`</b>: Libplacebo preset 5;
+	ADDON_ACTION_LIBPLACEBO_PRESET_5 = 905,
+
+  /// @brief <b>`906`</b>: Libplacebo preset 6;
+  ADDON_ACTION_LIBPLACEBO_PRESET_6 = 906,
+
+  /// @brief <b>`907`</b>: Libplacebo preset 7;
+  ADDON_ACTION_LIBPLACEBO_PRESET_7 = 907,
+
+  /// @brief <b>`908`</b>: Libplacebo preset 8;
+  ADDON_ACTION_LIBPLACEBO_PRESET_8 = 908,
+
+  /// @brief <b>`909`</b>: Libplacebo preset 9;
+  ADDON_ACTION_LIBPLACEBO_PRESET_9 = 909,
+
   /// @brief <b>`998`</b>: ERROR action is used to play an error sound.
   ADDON_ACTION_ERROR = 998,
 

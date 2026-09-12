@@ -58,6 +58,50 @@ CMediaSettings& CMediaSettings::GetInstance()
   return sMediaSettings;
 }
 
+bool CMediaSettings::LoadVideoSettings(const TiXmlNode* settings, CVideoSettings& vs)
+{
+  if(!settings)
+	return false;
+
+  const TiXmlElement* pElement = settings->FirstChildElement("videosettings");
+  if(pElement)
+  {
+	int interlaceMethod;
+	XMLUtils::GetInt(pElement, "interlacemethod", interlaceMethod, VS_INTERLACEMETHOD_NONE, VS_INTERLACEMETHOD_MAX); vs.m_InterlaceMethod = (EINTERLACEMETHOD) interlaceMethod;
+
+	int scalingMethod;
+	if(!XMLUtils::GetInt(pElement, "scalingmethod", scalingMethod, VS_SCALINGMETHOD_NEAREST, VS_SCALINGMETHOD_MAX)) scalingMethod = (int) VS_SCALINGMETHOD_LINEAR; vs.m_ScalingMethod = (ESCALINGMETHOD) scalingMethod;
+
+	XMLUtils::GetInt(pElement, "viewmode", vs.m_ViewMode, ViewModeNormal, ViewModeZoom110Width);
+	if(!XMLUtils::GetFloat(pElement, "zoomamount", vs.m_CustomZoomAmount, 0.5f, 2.0f))         vs.m_CustomZoomAmount = 1.0f;
+	if(!XMLUtils::GetFloat(pElement, "pixelratio", vs.m_CustomPixelRatio, 0.5f, 2.0f))         vs.m_CustomPixelRatio = 1.0f;
+	if(!XMLUtils::GetFloat(pElement, "verticalshift", vs.m_CustomVerticalShift, -2.0f, 2.0f))  vs.m_CustomVerticalShift = 0.0f;
+	if(!XMLUtils::GetFloat(pElement, "volumeamplification", vs.m_VolumeAmplification, VOLUME_DRC_MINIMUM * 0.01f, VOLUME_DRC_MAXIMUM * 0.01f))      vs.m_VolumeAmplification = VOLUME_DRC_MINIMUM * 0.01f;
+	if(!XMLUtils::GetFloat(pElement, "noisereduction", vs.m_NoiseReduction, 0.0f, 1.0f))       vs.m_NoiseReduction = 0.0f;
+	XMLUtils::GetBoolean(pElement, "postprocess", vs.m_PostProcess);
+	if(!XMLUtils::GetFloat(pElement, "sharpness", vs.m_Sharpness, -1.0f, 1.0f))      vs.m_Sharpness = 0.0f;
+	XMLUtils::GetBoolean(pElement, "showsubtitles", vs.m_SubtitleOn);
+	if(!XMLUtils::GetFloat(pElement, "brightness", vs.m_Brightness, 0, 100))      vs.m_Brightness = 50;
+	if(!XMLUtils::GetFloat(pElement, "contrast", vs.m_Contrast, 0, 100))      vs.m_Contrast = 50;
+	if(!XMLUtils::GetFloat(pElement, "gamma", vs.m_Gamma, 0, 100))      vs.m_Gamma = 20;
+	if(!XMLUtils::GetFloat(pElement, "audiodelay", vs.m_AudioDelay, -10.0f, 10.0f))      vs.m_AudioDelay = 0.0f;
+	if(!XMLUtils::GetFloat(pElement, "subtitledelay", vs.m_SubtitleDelay, -10.0f, 10.0f))      vs.m_SubtitleDelay = 0.0f;
+	XMLUtils::GetBoolean(pElement, "nonlinstretch", vs.m_CustomNonLinStretch);
+	if(!XMLUtils::GetInt(pElement, "stereomode", vs.m_StereoMode))      vs.m_StereoMode = 0;
+	if(!XMLUtils::GetInt(pElement, "centermixlevel", vs.m_CenterMixLevel))      vs.m_CenterMixLevel = 0;
+
+	int toneMapMethod;
+	if(!XMLUtils::GetInt(pElement, "tonemapmethod", toneMapMethod, VS_TONEMAPMETHOD_OFF, VS_TONEMAPMETHOD_MAX))  toneMapMethod = VS_TONEMAPMETHOD_HABLE;
+	vs.m_ToneMapMethod = static_cast<ETONEMAPMETHOD>(toneMapMethod);
+	if(!XMLUtils::GetFloat(pElement, "tonemapparam", vs.m_ToneMapParam, 0.1f, 5.0f))  vs.m_ToneMapParam = 1.0f;
+  }
+
+  CPLHelper::LoadLibplaceboSettings(vs, pElement);
+  CPLHelper::UpdateLibPLaceboParamsFromVideoSettings(vs);
+
+  return true;
+}
+
 bool CMediaSettings::Load(const TiXmlNode *settings)
 {
   if (!settings)
@@ -181,6 +225,44 @@ bool CMediaSettings::Load(const TiXmlNode *settings)
 
   return true;
 }
+
+bool CMediaSettings::SaveVideoSettings(TiXmlNode* settings, const CVideoSettings& vs) const
+{
+  if(!settings)
+	return false;
+
+  TiXmlElement videoSettingsNode("videosettings");
+  TiXmlNode* pNode = settings->InsertEndChild(videoSettingsNode);
+  if(!pNode)
+	return false;
+
+  XMLUtils::SetInt(pNode, "interlacemethod", vs.m_InterlaceMethod);
+  XMLUtils::SetInt(pNode, "scalingmethod", vs.m_ScalingMethod);
+  XMLUtils::SetFloat(pNode, "noisereduction", vs.m_NoiseReduction);
+  XMLUtils::SetBoolean(pNode, "postprocess", vs.m_PostProcess);
+  XMLUtils::SetFloat(pNode, "sharpness", vs.m_Sharpness);
+  XMLUtils::SetInt(pNode, "viewmode", vs.m_ViewMode);
+  XMLUtils::SetFloat(pNode, "zoomamount", vs.m_CustomZoomAmount);
+  XMLUtils::SetFloat(pNode, "pixelratio", vs.m_CustomPixelRatio);
+  XMLUtils::SetFloat(pNode, "verticalshift", vs.m_CustomVerticalShift);
+  XMLUtils::SetFloat(pNode, "volumeamplification", vs.m_VolumeAmplification);
+  XMLUtils::SetBoolean(pNode, "showsubtitles", vs.m_SubtitleOn);
+  XMLUtils::SetFloat(pNode, "brightness", vs.m_Brightness);
+  XMLUtils::SetFloat(pNode, "contrast", vs.m_Contrast);
+  XMLUtils::SetFloat(pNode, "gamma", vs.m_Gamma);
+  XMLUtils::SetFloat(pNode, "audiodelay", vs.m_AudioDelay);
+  XMLUtils::SetFloat(pNode, "subtitledelay", vs.m_SubtitleDelay);
+  XMLUtils::SetBoolean(pNode, "nonlinstretch", vs.m_CustomNonLinStretch);
+  XMLUtils::SetInt(pNode, "stereomode", vs.m_StereoMode);
+  XMLUtils::SetInt(pNode, "centermixlevel", vs.m_CenterMixLevel);
+  XMLUtils::SetInt(pNode, "tonemapmethod", vs.m_ToneMapMethod);
+  XMLUtils::SetFloat(pNode, "tonemapparam", vs.m_ToneMapParam);
+
+  CPLHelper::SaveLibplaceboSettings(vs, pNode);
+
+  return true;
+}
+
 
 bool CMediaSettings::Save(TiXmlNode *settings) const
 {
