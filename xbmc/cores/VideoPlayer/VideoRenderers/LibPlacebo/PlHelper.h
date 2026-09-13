@@ -156,6 +156,7 @@ public:
   static void LoadLibplaceboSettings(CVideoSettings& vs);
   static bool LoadLibplaceboSettings(CVideoSettings& vs, std::string path);
   static bool LoadLibplaceboSettings(CVideoSettings& vs, const TiXmlElement* pElement);
+  static bool LoadLibplaceboSettingsPreset(CVideoSettings& vs, const TiXmlElement* pElement);
   static void SaveLibplaceboSettings(const CVideoSettings& vs, std::string path);
   static void SaveLibplaceboSettings(const CVideoSettings& vs, TiXmlNode* settings);
   static void LoadLutFile(CVideoSettings& vs, const std::string& path);

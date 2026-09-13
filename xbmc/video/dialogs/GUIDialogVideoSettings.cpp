@@ -1757,7 +1757,7 @@ void CGUIDialogVideoSettings::LoadVideoPreset(CVideoSettings& vs)
   }
 
   CMediaSettings::GetInstance().LoadVideoSettings(pElement, vs);
-  appPlayer->SetVideoSettings(vs);
+  //appPlayer->SetVideoSettings(vs); //cl done in LoadVideoSettings
   SetupView();
 }
 

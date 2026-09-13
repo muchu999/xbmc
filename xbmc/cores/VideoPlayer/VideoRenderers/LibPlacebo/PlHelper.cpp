@@ -991,6 +991,21 @@ void CPLHelper::SaveLibplaceboSettings(const CVideoSettings& vs, TiXmlNode* pNod
   SerializeShaders(vs, pNode);
 }
 
+bool CPLHelper::LoadLibplaceboSettingsPreset(CVideoSettings& vs, const TiXmlElement* pElement)
+{
+  std::string value;
+
+  if(!pElement)
+	return false;
+
+  CPLHelper::ResetShaders(vs);
+  LoadLibplaceboSettings(vs, pElement);
+  CPLHelper::InitializeShaders(PL::PLInstance::Get()->GetGpu(), vs);
+  UpdateLibPLaceboParamsFromVideoSettings(vs);
+  SetVideoSettings(vs);
+  return true;
+}
+
 bool CPLHelper::LoadLibplaceboSettings(CVideoSettings& vs, std::string path)
 {
   CXBMCTinyXML xmlDoc;

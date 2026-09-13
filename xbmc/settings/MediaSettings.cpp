@@ -96,9 +96,7 @@ bool CMediaSettings::LoadVideoSettings(const TiXmlNode* settings, CVideoSettings
 	if(!XMLUtils::GetFloat(pElement, "tonemapparam", vs.m_ToneMapParam, 0.1f, 5.0f))  vs.m_ToneMapParam = 1.0f;
   }
 
-  CPLHelper::LoadLibplaceboSettings(vs, pElement);
-  CPLHelper::UpdateLibPLaceboParamsFromVideoSettings(vs);
-
+  CPLHelper::LoadLibplaceboSettingsPreset(vs, pElement);
   return true;
 }
 
