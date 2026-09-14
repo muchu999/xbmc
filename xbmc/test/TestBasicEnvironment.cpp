@@ -16,7 +16,6 @@
 #include "application/AppEnvironment.h"
 #include "application/AppParams.h"
 #include "application/Application.h"
-#include "filesystem/Directory.h"
 #include "filesystem/File.h"
 #include "filesystem/SpecialProtocol.h"
 #include "messaging/ApplicationMessenger.h"
@@ -29,10 +28,14 @@
 #include "Util.h"
 #endif
 
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
-#include <climits>
+#include <filesystem>
+#include <string>
 #include <system_error>
+
+#include <gtest/gtest.h>
 
 namespace fs = KODI::PLATFORM::FILESYSTEM;
 
@@ -109,8 +112,14 @@ void TestBasicEnvironment::TearDown()
 {
   g_application.m_ServiceManager->DeinitTesting();
 
-  // Removal after release of all open files
-  XFILE::CDirectory::RemoveRecursive(m_tempPath);
+  // Do not use the deinitialized VFS machinery.
+  // std::u8string cast to interpret the path as UTF-8 on all platforms.
+  std::error_code ec;
+  const std::filesystem::path tempPath{
+      std::u8string{reinterpret_cast<const char8_t*>(m_tempPath.data()), m_tempPath.size()}};
+  std::filesystem::remove_all(tempPath, ec);
+  if (ec)
+    ADD_FAILURE() << "Failed to remove the test profile at " << m_tempPath << ": " << ec.message();
 
   CServiceBroker::UnregisterAppMessenger();
 

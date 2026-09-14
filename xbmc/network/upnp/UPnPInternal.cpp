@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2012-2018 Team Kodi
+ *  Copyright (C) 2012-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -29,7 +29,7 @@
 #include "settings/lib/Setting.h"
 #include "utils/Base64.h"
 #include "utils/ContentUtils.h"
-#include "utils/LangCodeExpander.h"
+#include "utils/LanguageTag.h"
 #include "utils/Set.h"
 #include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
@@ -42,6 +42,8 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <Platinum/Source/Platinum/Platinum.h>
 
@@ -211,7 +213,7 @@ NPT_String GetMimeType(const CFileItem& item, const PLT_HttpRequestContext* cont
   /* if Platinum couldn't map it, default to Kodi internal mapping */
   if (mime.IsEmpty())
   {
-    NPT_String mime = item.GetMimeType().c_str();
+    mime = item.GetMimeType().c_str();
     if (mime == "application/octet-stream")
       mime = "";
   }
@@ -271,6 +273,36 @@ const NPT_String GetProtocolInfo(const CFileItem& item,
   NPT_String mime = GetMimeType(item, context);
   proto += ":*:" + mime + ":" + PLT_ProtocolInfo::GetDlnaExtension(mime, context);
   return proto;
+}
+
+/*----------------------------------------------------------------------
+|   AddAlternateMimeResources
++---------------------------------------------------------------------*/
+void AddAlternateMimeResources(PLT_MediaObject& object)
+{
+  // Content types in use under two names; a renderer matching on one cannot select the other.
+  static constexpr std::pair<const char*, const char*> alternates[] = {
+      {"audio/x-flac", "audio/flac"},
+      {"audio/x-ms-wma", "audio/wma"},
+  };
+
+  const NPT_Cardinal count = object.m_Resources.GetItemCount();
+  for (NPT_Cardinal i = 0; i < count; i++)
+  {
+    const NPT_String type = object.m_Resources[i].m_ProtocolInfo.GetContentType();
+    for (const auto& [name, alternate] : alternates)
+    {
+      const char* to = type == name ? alternate : type == alternate ? name : nullptr;
+      if (!to)
+        continue;
+
+      PLT_MediaItemResource resource = object.m_Resources[i];
+      NPT_String protocolInfo = resource.m_ProtocolInfo.ToString();
+      protocolInfo.Replace(":" + type + ":", ":" + NPT_String(to) + ":");
+      resource.m_ProtocolInfo = PLT_ProtocolInfo(protocolInfo);
+      object.m_Resources.Add(resource);
+    }
+  }
 }
 
 /*----------------------------------------------------------------------
@@ -875,15 +907,15 @@ PLT_MediaObject* BuildObject(CFileItem& item,
       else
         preferredLanguage = setting->ToString();
 
-      std::string preferredLanguageCode;
-      g_LangCodeExpander.ConvertToISO6392B(preferredLanguage, preferredLanguageCode);
+      const KODI::UTILS::CLanguageTag preferredTag{
+          KODI::UTILS::CLanguageTag::Parse(preferredLanguage)};
 
       for (unsigned int i = 0; i < subtitles.size(); i++)
       {
         ExternalStreamInfo info =
             CUtil::GetExternalStreamDetailsFromFilename(file_path.GetChars(), subtitles[i]);
 
-        if (preferredLanguageCode == info.language)
+        if (info.language.Matches(preferredTag))
         {
           subtitlePath = subtitles[i];
           break;
@@ -938,6 +970,8 @@ PLT_MediaObject* BuildObject(CFileItem& item,
       upnp_server->AddSubtitleUriForSecResponse(movie_md5, subtitle_uri);
     }
   }
+
+  AddAlternateMimeResources(*object);
 
   return object;
 

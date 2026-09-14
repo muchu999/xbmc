@@ -90,6 +90,8 @@ bool CServiceManager::InitForTesting()
   m_subTagRegistryManager = std::make_unique<KODI::UTILS::I18N::CSubTagRegistryManager>();
   m_subTagRegistryManager->Initialize();
 
+  m_mediaManager = std::make_unique<CMediaManager>();
+
   init_level = 1;
   return true;
 }
@@ -97,6 +99,7 @@ bool CServiceManager::InitForTesting()
 void CServiceManager::DeinitTesting()
 {
   init_level = 0;
+  m_mediaManager.reset();
   m_subTagRegistryManager.reset();
   m_fileExtensionProvider->Deinitialize();
   m_extsMimeSupportList.reset();
@@ -130,6 +133,16 @@ bool CServiceManager::InitStageOne()
 
 bool CServiceManager::InitStageTwo(const std::string& profilesUserDataFolder)
 {
+#ifdef HAS_PYTHON
+  // checked here rather than at construction so the failure reaches kodi.log
+  if (!m_XBPython->BindingModulesLoaded())
+  {
+    CLog::Log(LOGFATAL, "CServiceManager::{}: Unable to initialize the python binding modules",
+              __FUNCTION__);
+    return false;
+  }
+#endif
+
   // Initialize the addon database (must be before the addon manager is init'd)
   try
   {

@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2018 Team Kodi
+ *  Copyright (C) 2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -168,4 +168,99 @@ TEST(TestUPnPInternal, BuildObjectDatesFromDidlAreOrdered)
   ASSERT_TRUE(olderItem->GetDateTime().IsValid());
   ASSERT_TRUE(newerItem->GetDateTime().IsValid());
   EXPECT_LT(olderItem->GetDateTime(), newerItem->GetDateTime());
+}
+
+namespace
+{
+
+PLT_MediaItem MakeObjectWithResource(const char* protocolInfo)
+{
+  PLT_MediaItem object;
+  PLT_MediaItemResource resource;
+  resource.m_Uri = "http://192.0.2.1:8080/song";
+  resource.m_ProtocolInfo = PLT_ProtocolInfo(protocolInfo);
+  object.m_Resources.Add(resource);
+  return object;
+}
+
+void AddResource(PLT_MediaObject& object, const char* uri, const char* protocolInfo)
+{
+  PLT_MediaItemResource resource;
+  resource.m_Uri = uri;
+  resource.m_ProtocolInfo = PLT_ProtocolInfo(protocolInfo);
+  object.m_Resources.Add(resource);
+}
+
+bool HasContentType(const PLT_MediaObject& object, const char* contentType)
+{
+  for (NPT_Cardinal i = 0; i < object.m_Resources.GetItemCount(); i++)
+  {
+    if (object.m_Resources[i].m_ProtocolInfo.GetContentType().Compare(contentType, true) == 0)
+      return true;
+  }
+  return false;
+}
+
+} // namespace
+
+TEST(TestUPnPInternal, AddAlternateMimeResourcesOffersRegisteredFlacSpelling)
+{
+  PLT_MediaItem object = MakeObjectWithResource("http-get:*:audio/x-flac:*");
+
+  AddAlternateMimeResources(object);
+
+  EXPECT_EQ(2u, object.m_Resources.GetItemCount());
+  EXPECT_TRUE(HasContentType(object, "audio/x-flac"));
+  EXPECT_TRUE(HasContentType(object, "audio/flac"));
+}
+
+TEST(TestUPnPInternal, AddAlternateMimeResourcesOffersLegacyFlacSpelling)
+{
+  PLT_MediaItem object = MakeObjectWithResource("http-get:*:audio/flac:*");
+
+  AddAlternateMimeResources(object);
+
+  EXPECT_EQ(2u, object.m_Resources.GetItemCount());
+  EXPECT_TRUE(HasContentType(object, "audio/flac"));
+  EXPECT_TRUE(HasContentType(object, "audio/x-flac"));
+}
+
+TEST(TestUPnPInternal, AddAlternateMimeResourcesKeepsUriAndProtocol)
+{
+  PLT_MediaItem object = MakeObjectWithResource("http-get:*:audio/x-flac:DLNA.ORG_PN=FLAC");
+
+  AddAlternateMimeResources(object);
+
+  ASSERT_EQ(2u, object.m_Resources.GetItemCount());
+  EXPECT_STREQ("http://192.0.2.1:8080/song", object.m_Resources[1].m_Uri.GetChars());
+  EXPECT_STREQ("http-get", object.m_Resources[1].m_ProtocolInfo.GetProtocol().GetChars());
+  EXPECT_STREQ("audio/flac", object.m_Resources[1].m_ProtocolInfo.GetContentType().GetChars());
+}
+
+TEST(TestUPnPInternal, AddAlternateMimeResourcesLeavesUnrelatedTypes)
+{
+  PLT_MediaItem object = MakeObjectWithResource("http-get:*:audio/mpeg:*");
+
+  AddAlternateMimeResources(object);
+
+  EXPECT_EQ(1u, object.m_Resources.GetItemCount());
+  EXPECT_TRUE(HasContentType(object, "audio/mpeg"));
+}
+
+TEST(TestUPnPInternal, AddAlternateMimeResourcesOffersEveryAddress)
+{
+  PLT_MediaItem object;
+  AddResource(object, "http://192.0.2.1:1298/song", "http-get:*:audio/x-flac:*");
+  AddResource(object, "http://192.0.2.2:1298/song", "http-get:*:audio/x-flac:*");
+
+  AddAlternateMimeResources(object);
+
+  ASSERT_EQ(4u, object.m_Resources.GetItemCount());
+  int alternates = 0;
+  for (NPT_Cardinal i = 0; i < object.m_Resources.GetItemCount(); i++)
+  {
+    if (object.m_Resources[i].m_ProtocolInfo.GetContentType().Compare("audio/flac", true) == 0)
+      alternates++;
+  }
+  EXPECT_EQ(2, alternates);
 }

@@ -68,6 +68,7 @@ public:
   static constexpr auto SETTING_WINDOW_WIDTH = "window.width";
   static constexpr auto SETTING_WINDOW_HEIGHT = "window.height";
   static constexpr auto SETTING_VIDEOLIBRARY_SHOWUNWATCHEDPLOTS = "videolibrary.showunwatchedplots";
+  static constexpr auto SETTING_VIDEOLIBRARY_LANGUAGEDETAILS = "videolibrary.languagedetails";
   static constexpr auto SETTING_VIDEOLIBRARY_ACTORTHUMBS = "videolibrary.actorthumbs";
   static constexpr auto SETTING_MYVIDEOS_FLATTEN = "myvideos.flatten";
   static constexpr auto SETTING_VIDEOLIBRARY_FLATTENVERSIONS = "videolibrary.flattenversions";
@@ -150,6 +151,8 @@ public:
   static constexpr auto SETTING_VIDEOPLAYER_CONVERTDOVI = "videoplayer.convertdovi";
   static constexpr auto SETTING_VIDEOPLAYER_ALLOWEDHDRFORMATS = "videoplayer.allowedhdrformats";
   static constexpr auto SETTING_VIDEOPLAYER_DOVIZEROLEVEL5 = "videoplayer.dovizerolevel5";
+  static constexpr auto SETTING_VIDEOPLAYER_FILESTREAMDISPLAYORDER =
+      "videoplayer.filestreamdisplayorder";
   static constexpr auto SETTING_VIDEOPLAYER_QUEUETIMESIZE = "videoplayer.queuetimesize";
   static constexpr auto SETTING_VIDEOPLAYER_QUEUEDATASIZE = "videoplayer.queuedatasize";
   static constexpr auto SETTING_MYVIDEOS_SELECTACTION = "myvideos.selectaction";
@@ -161,6 +164,7 @@ public:
   static constexpr auto SETTING_MYVIDEOS_EXTRACTTHUMB = "myvideos.extractthumb";
   static constexpr auto SETTING_MYVIDEOS_STACKVIDEOS = "myvideos.stackvideos";
   static constexpr auto SETTING_LOCALE_SUBTITLELANGUAGE = "locale.subtitlelanguage";
+  static constexpr auto SETTING_SUBTITLES_HIDESAMEAUDIOLANGUAGE = "subtitles.hidesameaudiolanguage";
   static constexpr auto SETTING_SUBTITLES_PARSECAPTIONS = "subtitles.parsecaptions";
   static constexpr auto SETTING_SUBTITLES_CAPTIONSALIGN = "subtitles.captionsalign";
   static constexpr auto SETTING_SUBTITLES_CAPTIONSIMPAIRED = "subtitles.captionsimpaired";
@@ -304,9 +308,9 @@ public:
   static constexpr auto SETTING_MUSICPLAYER_SEEKSTEPS = "musicplayer.seeksteps";
   static constexpr auto SETTING_MUSICPLAYER_SEEKDELAY = "musicplayer.seekdelay";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINTYPE = "musicplayer.replaygaintype";
-  static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINPREAMP = "musicplayer.replaygainpreamp";
+  static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINPREAMP = "musicplayer.replaygainpreampdb";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINNOGAINPREAMP =
-      "musicplayer.replaygainnogainpreamp";
+      "musicplayer.replaygainnogainpreampdb";
   static constexpr auto SETTING_MUSICPLAYER_REPLAYGAINAVOIDCLIPPING =
       "musicplayer.replaygainavoidclipping";
   static constexpr auto SETTING_MUSICPLAYER_CROSSFADE = "musicplayer.crossfade";
@@ -499,6 +503,11 @@ public:
   static const int VIDEOLIBRARY_PLOTS_SHOW_UNWATCHED_MOVIES = 0;
   static const int VIDEOLIBRARY_PLOTS_SHOW_UNWATCHED_TVSHOWEPISODES = 1;
   static const int VIDEOLIBRARY_THUMB_SHOW_UNWATCHED_EPISODE = 2;
+  // values for SETTING_VIDEOLIBRARY_LANGUAGEDETAILS
+  // Which audio stream the language, codec and channel count shown against an item describe
+  static const int VIDEOLIBRARY_LANGUAGE_DETAILS_PLAYER = 0; // the stream that will be played
+  static const int VIDEOLIBRARY_LANGUAGE_DETAILS_DEFAULT = 1; // the media default stream
+  static const int VIDEOLIBRARY_LANGUAGE_DETAILS_BEST = 2; // the technically best stream
   // values for SETTING_VIDEOLIBRARY_ARTWORK_LEVEL
   static const int VIDEOLIBRARY_ARTWORK_LEVEL_ALL = 0;
   static const int VIDEOLIBRARY_ARTWORK_LEVEL_BASIC = 1;

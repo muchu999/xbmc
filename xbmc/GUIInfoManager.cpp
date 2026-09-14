@@ -4504,6 +4504,16 @@ constexpr std::array<InfoMap, 88> videoplayer = {{
 ///     @skinning_v22 **[New Boolean Condition]** \link RetroPlayer_AchievementsLoggedIn `RetroPlayer.AchievementsLoggedIn`\endlink
 ///     <p>
 ///   }
+///   \table_row3{   <b>`RetroPlayer.AchievementsProgress`</b>,
+///                  \anchor RetroPlayer_AchievementsProgress
+///                  _string_,
+///     @return The player's progress through the currently-playing game's
+///     achievements as "earned / total" (e.g. "3 / 77")\, or an empty string if
+///     the game has no achievements.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link RetroPlayer_AchievementsProgress `RetroPlayer.AchievementsProgress`\endlink
+///     <p>
+///   }
 ///   \table_row3{   <b>`RetroPlayer.RichPresence`</b>,
 ///                  \anchor RetroPlayer_RichPresence
 ///                  _string_,
@@ -4592,7 +4602,7 @@ constexpr std::array<InfoMap, 88> videoplayer = {{
 ///
 /// -----------------------------------------------------------------------------
 // clang-format off
-constexpr std::array<InfoMap, 18> retroplayer = {{
+constexpr std::array<InfoMap, 26> retroplayer = {{
     {"title", RETROPLAYER_TITLE},
     {"platform", RETROPLAYER_PLATFORM},
     {"genres", RETROPLAYER_GENRES},
@@ -4604,6 +4614,14 @@ constexpr std::array<InfoMap, 18> retroplayer = {{
     {"gameclientplatforms", RETROPLAYER_GAME_CLIENT_PLATFORMS},
     {"richpresence", RETROPLAYER_RICH_PRESENCE},
     {"achievementsloggedin", RETROPLAYER_ACHIEVEMENTS_LOGGED_IN},
+    {"achievementsprogress", RETROPLAYER_ACHIEVEMENTS_PROGRESS},
+    {"achievementschallengetitle", RETROPLAYER_ACHIEVEMENTS_CHALLENGE_TITLE},
+    {"achievementschallengebadge", RETROPLAYER_ACHIEVEMENTS_CHALLENGE_BADGE},
+    {"leaderboardtracker", RETROPLAYER_LEADERBOARD_TRACKER},
+    {"achievementsindicatortitle", RETROPLAYER_ACHIEVEMENTS_INDICATOR_TITLE},
+    {"achievementsindicatorbadge", RETROPLAYER_ACHIEVEMENTS_INDICATOR_BADGE},
+    {"achievementsindicatorprogress", RETROPLAYER_ACHIEVEMENTS_INDICATOR_PROGRESS},
+    {"achievementsindicatorpercent", RETROPLAYER_ACHIEVEMENTS_INDICATOR_PERCENT},
     {"supportseject", RETROPLAYER_SUPPORTS_EJECT},
     {"discejected", RETROPLAYER_DISC_EJECTED},
     {"disclabel", RETROPLAYER_DISC_LABEL},
@@ -6784,6 +6802,66 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     ISO 639-2 three character code: e.g. eng\, epo\, deu)
 ///     <p>
 ///   }
+///   \table_row3{   <b>`ListItem.FirstAudioLanguage`</b>,
+///                  \anchor ListItem_FirstAudioLanguage
+///                  _string_,
+///     @return The language of the first audio stream of the currently selected video\, in the
+///     order the source lists them. Usually an ISO 639-2 code taken from the container and
+///     truncated to three characters\, but it is not validated as one\, and may be a BCP 47
+///     derived code where the track title carries one
+///     @note Unlike \link ListItem_AudioLanguage `ListItem.AudioLanguage`\endlink this is the
+///     stream listed first by whatever produced the stream details: a bluray playlist\, whose
+///     streams are in stream number order so the first is the one the disc expects a player to
+///     start with; any other container\, in the order its demuxer reports; or an NFO\, in the
+///     order its elements appear. It is not the stream playback will select.
+///     Stream flags\, a choice remembered from a previous watch and the audio layout at play time
+///     all affect the latter and are not available here.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.FirstSubtitleLanguage`</b>,
+///                  \anchor ListItem_FirstSubtitleLanguage
+///                  _string_,
+///     @return The language of the first subtitle stream of the currently selected video\, in
+///     the order the source lists them\, with the same caveats as
+///     \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink
+///     @note The counterpart of
+///     \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink for subtitles.
+///     This says nothing about whether subtitles are displayed to begin with.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_FirstSubtitleLanguage `ListItem.FirstSubtitleLanguage`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.FirstAudioCodec`</b>,
+///                  \anchor ListItem_FirstAudioCodec
+///                  _string_,
+///     @return The codec of the first audio stream of the currently selected video, in the order
+///     the source lists them.
+///     @note Unlike \link ListItem_AudioCodec `ListItem.AudioCodec`\endlink this describes the
+///     stream listed first by the source\ as described for
+///     \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink\ rather than the
+///     stream playback will select. Pairs
+///     with \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_FirstAudioCodec `ListItem.FirstAudioCodec`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.FirstAudioChannels`</b>,
+///                  \anchor ListItem_FirstAudioChannels
+///                  _string_,
+///     @return The number of audio channels of the first audio stream of the currently selected
+///     video, in the order the source lists them.
+///     @note Unlike \link ListItem_AudioChannels `ListItem.AudioChannels`\endlink this describes
+///     the stream listed first by the source\ as described for
+///     \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink. Accepts
+///     the same `DefaultLayout` parameter\, ie. `ListItem.FirstAudioChannels(DefaultLayout)`
+///     renders 6 as 5.1. Pairs with
+///     \link ListItem_FirstAudioLanguage `ListItem.FirstAudioLanguage`\endlink.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_FirstAudioChannels `ListItem.FirstAudioChannels`\endlink
+///     <p>
+///   }
 ///   \table_row3{   <b>`ListItem.Property(AudioCodec.[n])`</b>,
 ///                  \anchor ListItem_Property_AudioCodec
 ///                  _string_,
@@ -7699,6 +7777,13 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     <p><hr>
 ///     @skinning_v21 **[New Infolabel]** \link ListItem_HasVideoExtras `ListItem.HasVideoExtras`\endlink
 ///   }
+///   \table_row3{   <b>`ListItem.IsDefaultVideoVersionName`</b>,
+///                  \anchor ListItem_IsDefaultVideoVersionName
+///                  _boolean_,
+///     @return **True** when the selected item is a video version with default name.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_IsDefaultVideoVersionName `ListItem.IsDefaultVideoVersionName`\endlink
+///   }
 ///   \table_row3{   <b>`ListItem.PVRClientName`</b>,
 ///                  \anchor ListItem_PVRClientName
 ///                  _string_,
@@ -7755,7 +7840,7 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///
 /// -----------------------------------------------------------------------------
 // clang-format off
-constexpr std::array<InfoMap, 228> listitem_labels = {{
+constexpr std::array<InfoMap, 233> listitem_labels = {{
     {"thumb",                         LISTITEM_THUMB},
     {"icon",                          LISTITEM_ICON},
     {"actualicon",                    LISTITEM_ACTUAL_ICON},
@@ -7877,6 +7962,10 @@ constexpr std::array<InfoMap, 228> listitem_labels = {{
     {"audiochannels",                 LISTITEM_AUDIO_CHANNELS},
     {"audiolanguage",                 LISTITEM_AUDIO_LANGUAGE},
     {"subtitlelanguage",              LISTITEM_SUBTITLE_LANGUAGE},
+    {"firstaudiolanguage",          LISTITEM_FIRST_AUDIO_LANGUAGE},
+    {"firstsubtitlelanguage",       LISTITEM_FIRST_SUBTITLE_LANGUAGE},
+    {"firstaudiocodec",             LISTITEM_FIRST_AUDIO_CODEC},
+    {"firstaudiochannels",          LISTITEM_FIRST_AUDIO_CHANNELS},
     {"isresumable",                   LISTITEM_IS_RESUMABLE},
     {"percentplayed",                 LISTITEM_PERCENT_PLAYED},
     {"isfolder",                      LISTITEM_IS_FOLDER},
@@ -7977,6 +8066,7 @@ constexpr std::array<InfoMap, 228> listitem_labels = {{
     {"isvideoextra",                  LISTITEM_ISVIDEOEXTRA},
     {"videoversionname",              LISTITEM_VIDEOVERSION_NAME},
     {"hasvideoextras",                LISTITEM_HASVIDEOEXTRAS},
+    {"isdefaultvideoversionname",     LISTITEM_ISDEFAULTVIDEOVERSION_NAME},
     {"pvrclientname",                 LISTITEM_PVR_CLIENT_NAME},
     {"pvrinstancename",               LISTITEM_PVR_INSTANCE_NAME},
     {"pvrgrouporigin",                LISTITEM_PVR_GROUP_ORIGIN},
@@ -11673,7 +11763,8 @@ int CGUIInfoManager::TranslateListItem(const Property& cat,
     {
       data4 = TranslateTimeFormat(prop.param());
     }
-    else if (prop.Name() == "audiochannels" || prop.Name() == "musicchannels")
+    else if (prop.Name() == "audiochannels" || prop.Name() == "musicchannels" ||
+             prop.Name() == "firstaudiochannels")
     {
       data3 = prop.param();
     }

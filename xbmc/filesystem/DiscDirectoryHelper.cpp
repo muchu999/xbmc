@@ -33,12 +33,14 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <numeric>
 #include <ranges>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -152,45 +154,111 @@ void SortEpisodes(Episodes& episodes)
                     { return std::tie(e.iSeason, e.iEpisode, e.iSubepisode); });
 }
 
-bool IsPotentialPlayAllPlaylist(const PlaylistInformation& playlistInformation,
-                                unsigned int numEpisodes)
+// 'Play-all' playlists
+//
+// This is the term given to a playlist that plays all the episodes on a disc in order.
+// The underlying assumption is that the bulk of each episode is contained in a single clip and that the 'play-all'
+// playlist will contain all those clips.
+//
+// However, in some cases there are additional 'filler' clips - ie. individual intros, credits, summaries etc..
+// These may be found in the episode playlists themselves or in the play-all playlist.
+//
+// For example - lets assume a disc has 3 episodes, each with a single clip:
+//
+// Playlist 1   - clip 1 (episode 1)
+// Playlist 2   - clip 2 (episode 2)
+// Playlist 3   - clip 3 (episode 3)
+// Playlist 800 - clips 1,2,3 - the 'play-all' playlist containing clips 1,2,3 in that order
+//
+// Sometimes the episode playlists may have individual intros and credits, which are not included in the play-all playlist:
+//
+// Playlist 1   - clip 10,1,11 (episode 1)
+// Playlist 2   - clip 12,2,13 (episode 2)
+// Playlist 3   - clip 14,3,15 (episode 3)
+// Playlist 800 - clips 1,2,3 - the 'play-all' playlist
+//
+// There can also be variations of the theme (ie. a single intro clip and a single credits clip - so playlist 2 would be clip 10,2,11)
+//
+// There may also be additional clips in the play-all playlist, which are not found in the episode playlists. There could be a
+// single intro and single credits clip (and the episode playlists may/not have their own individual intros and credits).
+//
+// Playlist 1   - clip 10,1,11 (episode 1)
+// Playlist 2   - clip 10,2,11 (episode 2)
+// Playlist 3   - clip 10,3,11 (episode 3)
+// Playlist 800 - clips 12,1,2,3,13 - the 'play-all' playlist
+//
+// Or alternatively:
+//
+// Playlist 1   - clip 10,1,11 (episode 1)
+// Playlist 2   - clip 10,2,11 (episode 2)
+// Playlist 3   - clip 10,3,11 (episode 3)
+// Playlist 800 - clips 10,1,11,10,2,11,10,3,11 - the 'play-all' playlist
+
+// Determine the episode clips in a potential play all playlist, and their positions within it
+// Done on the basis of clip duration
+std::vector<size_t> GetEpisodeClipPositions(const ClipMap& clips,
+                                            const PlaylistInformation& playlistInformation,
+                                            std::chrono::milliseconds minEpisodeDuration)
 {
-  return playlistInformation.clips.size() >= numEpisodes &&
-         playlistInformation.clips.size() <= numEpisodes + 2;
+  std::vector<size_t> positions;
+  for (size_t position = 0; const unsigned int clip : playlistInformation.clips)
+  {
+    if (const auto it{clips.find(clip)};
+        it != clips.end() && it->second.duration >= minEpisodeDuration)
+      positions.emplace_back(position);
+    ++position;
+  }
+  return positions;
 }
 
-bool ClipQualifies(const ClipInfo& clipInformation,
-                   unsigned int clip,
-                   const PlaylistInformation& playlistInformation,
-                   unsigned int& playAllPlaylistEpisodesStartOffset,
-                   bool& allowBeginningOrEnd,
-                   bool allowBeginningAndEnd,
-                   std::chrono::milliseconds minEpisodeDuration)
+// If there are filler clips (intro/credits etc.) in a 'play-all' playlist they should be in the same place
+// relative to each episode clip
+bool IsPlayAllPlaylistFillerRegular(const std::vector<unsigned int>& clips,
+                                    const std::vector<size_t>& episodeClipPositions)
 {
-  // If clip doesn't appear in another playlist (ie. clip should appear in both the play all playlist and the individual episode)
-  // or clip is too short this is not a Play All playlist
-  // BUT we allow first and/or last clip to be shorter or single (ie start intro/end credits)
-  const bool isShort{clipInformation.duration < minEpisodeDuration};
-  const bool inSinglePlaylist{clipInformation.playlists.size() == 1};
-  if (!isShort && !inSinglePlaylist)
-    return true;
+  const auto span = [&clips](size_t begin, size_t end)
+  { return std::span{clips}.subspan(begin, end - begin); };
 
-  const bool canBeAtBeginningOrEnd{allowBeginningOrEnd || allowBeginningAndEnd};
-  if (isShort && canBeAtBeginningOrEnd)
+  const size_t first{episodeClipPositions.front()};
+  const size_t last{episodeClipPositions.back()};
+  const auto leading{span(0, first)};
+  const auto trailing{span(last + 1, clips.size())};
+
+  // Every pair of consecutive episode clips is separated by the same filler clips
+  const auto separator{
+      span(first + 1, episodeClipPositions.size() > 1 ? episodeClipPositions[1] : first + 1)};
+  for (size_t i = 2; i < episodeClipPositions.size(); ++i)
   {
-    if (clip == playlistInformation.clips.front())
-    {
-      playAllPlaylistEpisodesStartOffset = 1;
-      allowBeginningOrEnd =
-          false; // If allowBeginningOrEnd true and short clip found at beginning, cannot have one at end
-      return true;
-    }
-
-    if (clip == playlistInformation.clips.back())
-      return true;
+    if (!std::ranges::equal(span(episodeClipPositions[i - 1] + 1, episodeClipPositions[i]),
+                            separator))
+      return false;
   }
 
-  return false;
+  // With no separator to match, allow a lone intro and/or credits clip
+  if (separator.empty())
+    return leading.size() <= 1 && trailing.size() <= 1;
+
+  // The playlist begins part way through the separator and ends part way into the next one
+  return leading.size() <= separator.size() &&
+         std::ranges::equal(leading, separator.last(leading.size())) &&
+         trailing.size() <= separator.size() &&
+         std::ranges::equal(trailing, separator.first(trailing.size()));
+}
+
+// Check if the potential 'play-all' playlist:
+// 1) Has the right number of episode length clips for the number of episodes on the disc
+// 2) Has the filler (intro/credits etc.) clips in the same place relative to each episode clip
+bool IsPotentialPlayAllPlaylist(const ClipMap& clips,
+                                const PlaylistInformation& playlistInformation,
+                                unsigned int numEpisodes,
+                                std::chrono::milliseconds minEpisodeDuration)
+{
+  const std::vector<size_t> episodeClipPositions{
+      GetEpisodeClipPositions(clips, playlistInformation, minEpisodeDuration)};
+  if (episodeClipPositions.size() != numEpisodes)
+    return false;
+
+  return IsPlayAllPlaylistFillerRegular(playlistInformation.clips, episodeClipPositions);
 }
 
 bool IsValidSingleEpisodePlaylist(const PlaylistInformation& singleEpisodePlaylistInformation,
@@ -256,38 +324,32 @@ bool CheckClip(const PlaylistMap& playlists,
 
 bool ProcessPlaylistClips(const ClipMap& clips,
                           const PlaylistMap& playlists,
-                          unsigned int numEpisodes,
                           unsigned int playlistNumber,
-                          unsigned int& playAllPlaylistEpisodesStartOffset,
                           std::chrono::milliseconds minEpisodeDuration,
                           const PlaylistInformation& playlistInformation,
                           std::map<unsigned int, std::vector<unsigned int>>& playAllPlaylistClipMap)
 {
-  bool allowBeginningOrEnd{playlistInformation.clips.size() == numEpisodes + 1};
-  const bool allowBeginningAndEnd{playlistInformation.clips.size() == numEpisodes + 2};
-
-  // Loop through each clip in potential play all playlist (numbering between numEpisodes and numEpisodes+2)
-  for (unsigned int clip : playlistInformation.clips)
+  // Loop through each clip in the potential play all playlist, whose filler clips
+  // IsPotentialPlayAllPlaylist() has already found to be in the expected places
+  for (const unsigned int clip : playlistInformation.clips)
   {
     const auto& it{clips.find(clip)};
     if (it == clips.end())
       return false;
-
-    // See if the clips qualify (ie. small clips (in addition to numEpisode clips) at start or end)
     const ClipInfo& clipInformation{it->second};
-    if (!ClipQualifies(clipInformation, clip, playlistInformation,
-                       playAllPlaylistEpisodesStartOffset, allowBeginningOrEnd,
-                       allowBeginningAndEnd, minEpisodeDuration))
-      return false;
 
-    // A short first/last clip is an extra intro or ending clip, not an episode playlist
-    // A short clip elsewhere would fail ClipQualifies
+    // A short clip is an intro or ending clip, not an episode
     // Record it with no episode playlists, so UsePlayAllPlaylistMethod skips over it
     if (clipInformation.duration < minEpisodeDuration)
     {
       playAllPlaylistClipMap[clip] = {};
       continue;
     }
+
+    // An episode's clip has to appear in both the play all playlist and the individual episode
+    // playlist, so a clip in no other playlist means this is not a play all playlist
+    if (clipInformation.playlists.size() == 1)
+      return false;
 
     // See if the playlists associated with the clip are valid as a single episodes
     std::vector<unsigned int> playAllPlaylistMap;
@@ -601,6 +663,13 @@ EpisodeExtent GetEpisodeExtent(const EpisodeExtents& episodes,
   return {start, duration};
 }
 
+// Which stream a playlist starts on says nothing about what it offers, so FLAG_DEFAULT is not
+// part of comparing one stream with another. Everything else about a stream is.
+StreamFlags GetComparableFlags(StreamFlags flags)
+{
+  return static_cast<StreamFlags>(flags & ~StreamFlags::FLAG_DEFAULT);
+}
+
 // Whether candidateStream offers everything stream does.
 //
 // The two must have the same language, name and flags - and the candidate must then
@@ -608,7 +677,7 @@ EpisodeExtent GetEpisodeExtent(const EpisodeExtents& episodes,
 bool IsStreamCovered(const AudioStreamInfo& stream, const AudioStreamInfo& candidateStream)
 {
   if (stream.language != candidateStream.language || stream.name != candidateStream.name ||
-      stream.flags != candidateStream.flags)
+      GetComparableFlags(stream.flags) != GetComparableFlags(candidateStream.flags))
     return false;
 
   // A channel count of zero means unknown, so only compare them when both are known
@@ -616,14 +685,26 @@ bool IsStreamCovered(const AudioStreamInfo& stream, const AudioStreamInfo& candi
       stream.channels > candidateStream.channels)
     return false;
 
-  return StreamUtils::GetCodecPriority(stream.codecName) <=
-         StreamUtils::GetCodecPriority(candidateStream.codecName);
+  // Codecs of equal priority are equally good but not interchangeable
+  const int priority{StreamUtils::GetCodecPriority(stream.codecName)};
+  const int candidatePriority{StreamUtils::GetCodecPriority(candidateStream.codecName)};
+  if (priority == candidatePriority)
+    return stream.codecName == candidateStream.codecName;
+
+  return priority < candidatePriority;
 }
 
 // Subtitle streams have no comparable ordering of quality, so they have to match
 bool IsStreamCovered(const SubtitleStreamInfo& stream, const SubtitleStreamInfo& candidateStream)
 {
-  return stream == candidateStream;
+  // Compared as a whole rather than field by field, so a field added to SubtitleStreamInfo is
+  // taken into account here without having to be added here too
+  SubtitleStreamInfo comparable{stream};
+  SubtitleStreamInfo comparableCandidate{candidateStream};
+  comparable.flags = GetComparableFlags(comparable.flags);
+  comparableCandidate.flags = GetComparableFlags(comparableCandidate.flags);
+
+  return comparable == comparableCandidate;
 }
 
 // Whether every stream of subset has a distinct counterpart in superset that covers it. Streams are
@@ -693,14 +774,12 @@ bool ArePlaylistsConsecutive(const R& items)
 
 void CDiscDirectoryHelper::StorePlayAllPlaylist(
     unsigned int playlistNumber,
-    unsigned int playAllPlaylistEpisodesStartOffset,
     const PlaylistInformation& playlistInformation,
     const std::map<unsigned int, std::vector<unsigned int>>& playAllPlaylistClipMap)
 {
   CLog::LogF(LOGDEBUG, "Potential play all playlist {}", playlistNumber);
   m_playAllPlaylists.insert(CandidatePlaylistInformation{
       .playlist = playlistNumber,
-      .playAllPlaylistEpisodesStartOffset = playAllPlaylistEpisodesStartOffset,
       .duration = playlistInformation.duration,
       .chapters = static_cast<unsigned int>(playlistInformation.chapters.size()),
       .clips = playlistInformation.clips,
@@ -715,12 +794,13 @@ void CDiscDirectoryHelper::FindPlayAllPlaylists(const ClipMap& clips,
   // Look for a potential play all playlist (gives episode order)
   //
   // Assumptions
-  //   1) Playlist clip count = number of episodes on disc (+2 for potential separate intro/end credits)
-  //   2) Each clip will be in at least one other playlist (the individual episode playlist)
-  //   3) Each clip (bar the last) will be at least MIN_EPISODE_DURATION long
-  //   4) Each potential individual episode playlist containing a clip from the potential play all playlist
+  //   1) The playlist has one clip at least MIN_EPISODE_DURATION long per episode on disc, and any
+  //      shorter clip is intro/credits filler in one of the places a play all playlist puts it
+  //      (see IsPotentialPlayAllPlaylist())
+  //   2) Each episode clip will be in at least one other playlist (the individual episode playlist)
+  //   3) Each potential individual episode playlist containing a clip from the potential play all playlist
   //      will have at most one other clip before/after
-  //   5) The clips look like the episodes (see ArePlayAllPlaylistClipsEpisodes())
+  //   4) The clips look like the episodes (see ArePlayAllPlaylistClipsEpisodes())
 
   // Only look for play all playlists if enough playlists and more than one episode on disc
   if (m_numEpisodes < 2 || playlists.size() < m_numEpisodes)
@@ -728,7 +808,8 @@ void CDiscDirectoryHelper::FindPlayAllPlaylists(const ClipMap& clips,
 
   for (const auto& [playlistNumber, playlistInformation] : playlists)
   {
-    if (!IsPotentialPlayAllPlaylist(playlistInformation, m_numEpisodes))
+    if (!IsPotentialPlayAllPlaylist(clips, playlistInformation, m_numEpisodes,
+                                    m_minEpisodeDuration))
       continue;
 
     if (!ArePlayAllPlaylistClipsEpisodes(clips, playlistInformation, episodesOnDisc, m_numSpecials,
@@ -742,14 +823,9 @@ void CDiscDirectoryHelper::FindPlayAllPlaylists(const ClipMap& clips,
     }
 
     std::map<unsigned int, std::vector<unsigned int>> playAllPlaylistClipMap;
-    unsigned int playAllPlaylistEpisodesStartOffset{0};
-    if (ProcessPlaylistClips(clips, playlists, m_numEpisodes, playlistNumber,
-                             playAllPlaylistEpisodesStartOffset, m_minEpisodeDuration,
+    if (ProcessPlaylistClips(clips, playlists, playlistNumber, m_minEpisodeDuration,
                              playlistInformation, playAllPlaylistClipMap))
-    {
-      StorePlayAllPlaylist(playlistNumber, playAllPlaylistEpisodesStartOffset, playlistInformation,
-                           playAllPlaylistClipMap);
-    }
+      StorePlayAllPlaylist(playlistNumber, playlistInformation, playAllPlaylistClipMap);
   }
 
   if (m_playAllPlaylists.empty())
@@ -1004,28 +1080,37 @@ void CDiscDirectoryHelper::UsePlayAllPlaylistMethod(int episodeIndex, const Play
   CLog::LogF(LOGDEBUG, "Using candidate play all playlist {} duration {}", playAllPlaylist,
              static_cast<int>(playlistInformation.duration.count() / 1000));
 
-  // Find the clip for the episode(s)
-  const int episodeOffset{
-      episodeIndex - static_cast<int>(m_numSpecials) + // Specials before episodes in episodesOnDisc
-      static_cast<int>(
-          playlistInformation
-              .playAllPlaylistEpisodesStartOffset)}; // Adjust if a short clip at start of play-all playlist
-  unsigned int i{0};
-  for (const auto& clip : playlistInformation.clips)
+  const auto& clipMapIt{m_playAllPlaylistsMap.find(playAllPlaylist)};
+  if (clipMapIt == m_playAllPlaylistsMap.end())
   {
+    CLog::LogF(LOGERROR, "Play all playlist {} missing in play all playlist map", playAllPlaylist);
+    return;
+  }
+  const auto& playAllPlaylistClipMap{clipMapIt->second};
+
+  // Find the clip for the episode(s). Specials come before episodes in episodesOnDisc.
+  const int episodeOffset{episodeIndex - static_cast<int>(m_numSpecials)};
+
+  // Walk the episode clips, skipping the play all playlist's intro/credits filler clips - those
+  // were recorded with no episode playlists of their own (see ProcessPlaylistClips())
+  unsigned int i{0};
+  for (const unsigned int clip : playlistInformation.clips)
+  {
+    const auto& it{playAllPlaylistClipMap.find(clip)};
+    if (it == playAllPlaylistClipMap.end())
+    {
+      CLog::LogF(LOGERROR, "Clip {} missing in play all playlist map", clip);
+      return;
+    }
+
+    // Playlist(s) with that clip, from the map populated earlier
+    const auto& singleEpisodePlaylists{it->second};
+    if (singleEpisodePlaylists.empty())
+      continue; // Filler clip
+
     if (m_allEpisodes == AllEpisodes::ALL || std::cmp_equal(i, episodeOffset))
     {
-      const auto& it{m_playAllPlaylistsMap.find(playAllPlaylist)};
-      if (it == m_playAllPlaylistsMap.end() || !it->second.contains(clip))
-      {
-        CLog::LogF(LOGERROR, "Clip {} missing in play all playlist map", clip);
-        return;
-      }
-
       CLog::LogF(LOGDEBUG, "Clip is {}", clip);
-
-      // Find playlist(s) with that clip from map populated earlier
-      const auto& singleEpisodePlaylists{it->second.find(clip)->second};
 
       for (const auto& singleEpisodePlaylist : singleEpisodePlaylists)
       {
@@ -1044,14 +1129,13 @@ void CDiscDirectoryHelper::UsePlayAllPlaylistMethod(int episodeIndex, const Play
 
         m_candidatePlaylists.try_emplace(
             singleEpisodePlaylist,
-            CandidatePlaylistInformation{
-                .playlist = singleEpisodePlaylist,
-                .index = i + m_numSpecials - playlistInformation.playAllPlaylistEpisodesStartOffset,
-                .duration = singleEpisodePlaylistInformation.duration,
-                .chapters =
-                    static_cast<unsigned int>(singleEpisodePlaylistInformation.chapters.size()),
-                .clips = singleEpisodePlaylistInformation.clips,
-                .languages = singleEpisodePlaylistInformation.languages});
+            CandidatePlaylistInformation{.playlist = singleEpisodePlaylist,
+                                         .index = i + m_numSpecials,
+                                         .duration = singleEpisodePlaylistInformation.duration,
+                                         .chapters = static_cast<unsigned int>(
+                                             singleEpisodePlaylistInformation.chapters.size()),
+                                         .clips = singleEpisodePlaylistInformation.clips,
+                                         .languages = singleEpisodePlaylistInformation.languages});
       }
     }
     ++i;
@@ -2337,7 +2421,9 @@ void LogMoviePlaylist(std::string_view prefix, const PlaylistInformation& playli
       StringUtils::SecondsToTimeString(static_cast<int>(
           std::chrono::duration_cast<std::chrono::seconds>(playlist.duration).count())),
       playlist.chapters.size(), playlist.clips.size(), playlist.languages,
-      fmt::join(playlist.pgStreams | std::views::transform(&SubtitleStreamInfo::language), ","));
+      fmt::join(playlist.pgStreams | std::views::transform([](const auto& stream)
+                                                           { return stream.language.AsBcp47(); }),
+                ","));
 }
 
 void LogMoviePlaylists(std::string_view prefix, const std::vector<PlaylistInformation>& playlists)
@@ -2429,6 +2515,16 @@ bool IsSamePresentation(const PlaylistInformation& a,
 }
 
 /*!
+ * \brief Whether the playlist presents the content picture-in-picture.
+ *
+ * \note Kodi does not play the secondary video stream.
+ */
+bool IsPictureInPicturePresentation(const PlaylistInformation& playlist)
+{
+  return playlist.hasSecondaryVideo;
+}
+
+/*!
  * \brief The playlist presenting the movie most fully of those of (near) the longest length.
  *
  * Playlists within MOVIE_EQUAL_LENGTH_TOLERANCE of one another are the same movie presented
@@ -2446,9 +2542,16 @@ const PlaylistInformation& GetBestMoviePlaylist(const std::vector<PlaylistInform
                                  return a.pgStreams.size() > b.pgStreams.size();
                                }};
 
-  const auto longest{std::ranges::max_element(playlists, {}, &PlaylistInformation::duration)};
+  // A picture-in-picture presentation is only the best a disc offers when it is all it offers
+  const bool anyFeature{
+      std::ranges::any_of(playlists, std::not_fn(IsPictureInPicturePresentation))};
+  auto candidates{
+      std::views::filter(playlists, [anyFeature](const PlaylistInformation& playlist)
+                         { return !anyFeature || !IsPictureInPicturePresentation(playlist); })};
+
+  const auto longest{std::ranges::max_element(candidates, {}, &PlaylistInformation::duration)};
   const PlaylistInformation* best{&*longest};
-  for (const auto& playlist : playlists)
+  for (const auto& playlist : candidates)
   {
     if (std::chrono::abs(playlist.duration - longest->duration) <= MOVIE_EQUAL_LENGTH_TOLERANCE &&
         offersMoreStreams(playlist, *best))
@@ -2687,6 +2790,35 @@ void EndMoviePlaylistSearch(const std::vector<PlaylistInformation>& playlists)
   CLog::LogF(LOGDEBUG, "*** Movie Search End ***");
 }
 
+/*!
+ * \brief The languages of the streams the disc expects a player to start with.
+ *
+ * The audio and presentation graphic streams the playlist flags as its defaults - audio stream
+ * number 1 and presentation graphic stream number 1 of its longest play item - shown as
+ * "eng | jpn". A playlist that flags no default, or whose default names no language,
+ * contributes nothing.
+ *
+ * The flag is read rather than the first stream taken, so that this agrees with the stream
+ * VideoPlayer is told is the default even where the two would otherwise differ - a playlist
+ * described from its clip rather than its play item flags no default at all.
+ */
+std::string GetDefaultStreamLanguages(const PlaylistInformation& information)
+{
+  const auto isDefault{[](const auto& stream)
+                       { return (stream.flags & StreamFlags::FLAG_DEFAULT) != 0; }};
+
+  std::vector<std::string> languages;
+  if (const auto audio{std::ranges::find_if(information.audioStreams, isDefault)};
+      audio != information.audioStreams.cend() && !audio->language.IsEmpty())
+    languages.emplace_back(audio->language.AsIso6392B());
+
+  if (const auto pg{std::ranges::find_if(information.pgStreams, isDefault)};
+      pg != information.pgStreams.cend() && !pg->language.IsEmpty())
+    languages.emplace_back(pg->language.AsIso6392B());
+
+  return StringUtils::Join(languages, " | ");
+}
+
 std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
                                              unsigned int playlist,
                                              unsigned int mainPlaylist,
@@ -2700,9 +2832,6 @@ std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
   // Get clips
   const std::chrono::milliseconds duration{information.duration};
 
-  // Get languages
-  const std::string langs{information.languages};
-
   CVideoInfoTag* itemTag{item->GetVideoInfoTag()};
   itemTag->SetDuration(static_cast<int>(duration.count() / 1000));
   item->SetProperty("bluray_playlist", playlist);
@@ -2715,11 +2844,16 @@ std::shared_ptr<CFileItem> GenerateMovieItem(const CURL& url,
   item->SetTitle(buf);
   item->SetLabel(buf);
 
-  const std::string chap{StringUtils::Format(
+  std::string label2{StringUtils::Format(
       CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25007),
       information.chapters.size(),
       StringUtils::SecondsToTimeString(static_cast<int>(duration.count() / 1000)))};
-  item->SetLabel2(chap);
+
+  // The streams a playlist starts on are what tells playlists offering the same content apart
+  if (const std::string languages{GetDefaultStreamLanguages(information)}; !languages.empty())
+    label2 += " | " + languages;
+
+  item->SetLabel2(label2);
 
   item->SetSize(0);
   item->SetArt("icon", "DefaultVideo.png");
@@ -2735,7 +2869,8 @@ void PopulateMovieFileItems(
     const std::vector<PlaylistInformation>& playlists,
     const StreamDetailsProvider& getStreamDetails)
 {
-  // Sort by duration (putting mainPlaylist first if present)
+  // Sort by duration (putting mainPlaylist first if present, and any picture-in-picture
+  // presentation last however long it runs)
   auto sortedPlaylists = playlists;
   std::ranges::sort(sortedPlaylists,
                     [mainPlaylist](const PlaylistInformation& a, const PlaylistInformation& b)
@@ -2745,6 +2880,11 @@ void PopulateMovieFileItems(
 
                       if (aIsMain || bIsMain)
                         return aIsMain && !bIsMain;
+
+                      const bool aIsPiP{IsPictureInPicturePresentation(a)};
+                      const bool bIsPiP{IsPictureInPicturePresentation(b)};
+                      if (aIsPiP != bIsPiP)
+                        return bIsPiP;
 
                       if (a.duration != b.duration)
                         return a.duration > b.duration;
@@ -2813,24 +2953,28 @@ bool CDiscDirectoryHelper::GetMoviePlaylists(const CURL& url,
 void CDiscDirectoryHelper::AddRootOptions(const CURL& url,
                                           CFileItemList& items,
                                           AllTitles allTitlesType,
-                                          AddMenuOption addMenuOption)
+                                          AddMenuAndAllTitlesOptions addMenuAndAllTitlesOptions)
 {
-  CURL path{url};
-  if (allTitlesType == AllTitles::MOVIES)
-    path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "all"));
-  else if (allTitlesType == AllTitles::EPISODES)
-    path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "episodes", "all"));
-
-  auto item{std::make_shared<CFileItem>(path.Get(), true)};
-  item->SetLabel(
-      CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25002) /* All titles */);
-  item->SetArt("icon", "DefaultVideoPlaylists.png");
-  items.Add(item);
-
-  if (addMenuOption == AddMenuOption::ADD_MENU)
+  if (addMenuAndAllTitlesOptions & AddMenuAndAllTitlesOptions::ADD_ALL_TITLES)
   {
+    CURL path{url};
+    if (allTitlesType == AllTitles::MOVIES)
+      path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "all"));
+    else if (allTitlesType == AllTitles::EPISODES)
+      path.SetFileName(URIUtils::AddFileToFolder("root", "titles", "episodes", "all"));
+
+    auto item{std::make_shared<CFileItem>(path.Get(), true)};
+    item->SetLabel(
+        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25002) /* All titles */);
+    item->SetArt("icon", "DefaultVideoPlaylists.png");
+    items.Add(item);
+  }
+
+  if (addMenuAndAllTitlesOptions & AddMenuAndAllTitlesOptions::ADD_MENU)
+  {
+    CURL path{url};
     path.SetFileName("menu");
-    item = {std::make_shared<CFileItem>(path.Get(), false)};
+    auto item{std::make_shared<CFileItem>(path.Get(), false)};
     item->SetLabel(
         CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25003) /* Menu */);
     item->SetArt("icon", "DefaultProgram.png");
