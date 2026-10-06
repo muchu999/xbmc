@@ -1502,17 +1502,18 @@ void CRendererPL::Render(CD3DTexture& target, CRect& sourceRect, CPoint(&destPoi
 	  pl_raw_primaries_get(frameOut.color.primaries));
   }
 
-  //if (frameOut.color.transfer == PL_COLOR_TRC_SRGB && frame->current &&
-  //  ((opts->sdr_adjust_gamma == 0 && opts->target_trc == PL_COLOR_TRC_UNKNOWN) ||
-  //    opts->sdr_adjust_gamma == -1))
-  //{
-  //  switch (frame->current->params.color.transfer) {
-  //  case PL_COLOR_TRC_BT_1886:
-  //  case PL_COLOR_TRC_GAMMA22:
-  //  case PL_COLOR_TRC_SRGB:
-  //    frameOut.color.transfer = frame->current->params.color.transfer;
-  //  }
-  //}
+  if (frameOut.color.transfer == PL_COLOR_TRC_SRGB) //&& frame->current &&
+    //((opts->sdr_adjust_gamma == 0 && opts->target_trc == PL_COLOR_TRC_UNKNOWN) ||
+     // opts->sdr_adjust_gamma == -1))
+  {
+    switch (frameIn.color.transfer)
+	{
+    case PL_COLOR_TRC_BT_1886:
+    case PL_COLOR_TRC_GAMMA22:
+    case PL_COLOR_TRC_SRGB:
+      frameOut.color.transfer = frameIn.color.transfer;
+    }
+  }
   //if (frameOut.color.transfer == PL_COLOR_TRC_SRGB) {
   //  // sRGB reference display is pure 2.2 power function, see IEC 61966-2-1-1999.
   //  if (opts->treat_srgb_as_power22 & 2)
