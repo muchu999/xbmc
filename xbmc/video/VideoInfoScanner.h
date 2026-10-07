@@ -68,9 +68,11 @@ namespace KODI::VIDEO
                     bool useLocal = true,
                     const std::string& actorArtPath = "",
                     CVideoInfoScannerArt::UseRemoteArtWithLocalScraper useRemoteArt =
-                        CVideoInfoScannerArt::UseRemoteArtWithLocalScraper::YES) const
+                        CVideoInfoScannerArt::UseRemoteArtWithLocalScraper::YES,
+                    const CFileItem* mediaItem = nullptr) const
     {
-      m_art.GetArtwork(pItem, content, bApplyToDir, useLocal, actorArtPath, useRemoteArt);
+      m_art.GetArtwork(pItem, content, bApplyToDir, useLocal, actorArtPath, useRemoteArt,
+                       mediaItem);
     }
 
     /*! \brief Scan a folder using the background scanner
@@ -331,6 +333,7 @@ namespace KODI::VIDEO
     //! Sticky - never reset, so a scanner instance is good for one scan only
     std::atomic<bool> m_bStop{false};
     bool m_scanAll;
+    bool m_scanSubtree{false};
 
     SimilarVideoScanAction m_similarVideoAction{SimilarVideoScanAction::NONE};
     bool m_ignoreVideoExtras{false};

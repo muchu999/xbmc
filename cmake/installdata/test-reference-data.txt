@@ -43,6 +43,7 @@ xbmc/filesystem/test/reffile.txt.zip64.zip
 xbmc/filesystem/test/dummy64.zip
 xbmc/filesystem/test/refRARnormal.rar
 xbmc/filesystem/test/refRARstored.rar
+xbmc/games/addons/cheats/test/game.cht.zip
 xbmc/music/tags/test/testdata/tagged.mp2
 xbmc/network/test/data/test-ranges.txt
 xbmc/network/test/data/test.html
@@ -90,6 +91,9 @@ xbmc/utils/i18n/Bcp47Registry/test/test-language-subtag-registry-strings.txt
 xbmc/utils/i18n/Bcp47Registry/test/test-language-subtag-registry-type.txt
 xbmc/utils/test/CXBMCTinyXML-test.xml
 xbmc/utils/test/rss.xml
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00888.mpls
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00889.mpls
+xbmc/utils/test/data/bluray/BDMV/PLAYLIST/00890.mpls
 xbmc/utils/test/data/bluray/BDMV/STREAM/00001.m2ts
 xbmc/utils/test/data/language/Spanish/strings.po
 xbmc/utils/test/resources/sample_chpl.mp4

@@ -16,12 +16,10 @@
 #include "filesystem/StackDirectory.h"
 #include "guilib/Texture.h"
 #include "network/NetworkFileItemClassify.h"
-#include "pictures/Picture.h"
 #include "playlists/PlayListFileItemClassify.h"
 #include "pvr/utils/PVRStreamUtils.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
-#include "utils/MemUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 #include "video/VideoFileItemClassify.h"
@@ -31,19 +29,16 @@
 #endif
 #include "DVDCodecs/DVDFactoryCodec.h"
 #include "DVDCodecs/Video/DVDVideoCodec.h"
-#include "DVDCodecs/Video/DVDVideoCodecFFmpeg.h"
 #include "DVDDemuxers/DVDDemux.h"
 #include "DVDDemuxers/DVDDemuxUtils.h"
 #include "DVDDemuxers/DVDDemuxVobsub.h"
 #include "DVDDemuxers/DVDFactoryDemuxer.h"
 #include "DVDInputStreams/DVDFactoryInputStream.h"
 #include "Process/ProcessInfo.h"
-#include "TextureCache.h"
 #include "Util.h"
-#include "cores/FFmpeg.h"
 #include "filesystem/File.h"
 
-#include <cstdlib>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -56,7 +51,7 @@ extern "C" {
 
 using namespace KODI;
 
-bool CDVDFileInfo::GetFileDuration(const std::string &path, int& duration)
+bool CDVDFileInfo::GetFileDuration(const std::string& path, int& duration)
 {
   std::unique_ptr<CDVDDemux> demux;
 
@@ -65,7 +60,9 @@ bool CDVDFileInfo::GetFileDuration(const std::string &path, int& duration)
   if (!input)
     return false;
 
-  if (!input->Open())
+  // A DVD can only be read through a navigator driven by a player, and the title that would
+  // give a meaningful duration is not known here anyway
+  if (input->IsStreamType(DVDSTREAM_TYPE_DVD) || !input->Open())
     return false;
 
   demux.reset(CDVDFactoryDemuxer::CreateDemuxer(input, true));
@@ -423,10 +420,11 @@ bool CDVDFileInfo::GetFileStreamDetails(CFileItem *pItem)
     return false;
   }
 
-  CDVDDemux *pDemuxer = CDVDFactoryDemuxer::CreateDemuxer(pInputStream, true);
+  CDVDDemux* pDemuxer = CDVDFactoryDemuxer::CreateDemuxer(pInputStream, true);
   if (pDemuxer)
   {
-    bool retVal = DemuxerToStreamDetails(pInputStream, pDemuxer, pItem->GetVideoInfoTag()->m_streamDetails, strFileNameAndPath);
+    bool retVal = DemuxerToStreamDetails(
+        pInputStream, pDemuxer, pItem->GetVideoInfoTag()->m_streamDetails, strFileNameAndPath);
 
     if (!pInputStream->IsStreamType(DVDSTREAM_TYPE_PVRMANAGER))
       ProcessExternalSubtitles(pItem);

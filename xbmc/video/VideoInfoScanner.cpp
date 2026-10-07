@@ -275,7 +275,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
       if (!bCancelled)
       {
-        if (m_bClean)
+        // An empty set cleans the whole library, which a scan of part of it must not do
+        if (m_bClean && !(m_scanSubtree && m_pathsToClean.empty()))
           m_database.CleanDatabase(m_handle, m_pathsToClean, false);
         else
         {
@@ -316,6 +317,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
   void CVideoInfoScanner::Start(const std::string& strDirectory, bool scanAll)
   {
     m_scanAll = scanAll;
+    m_scanSubtree = !strDirectory.empty();
     m_pathsToScan.clear();
     m_pathsToClean.clear();
 
@@ -1129,7 +1131,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
       const size_t part{partIndex++};
 
       // Only resolve blurays
-      if (!IsBluray(path))
+      const bool playlistChosen{URIUtils::GetBlurayPlaylistFromPath(path) > -1};
+      if (!IsBluray(path) && !playlistChosen)
       {
         fileParts.emplace_back(part);
         playlistPaths.emplace_back(path);
@@ -1140,10 +1143,18 @@ CVideoInfoScanner::~CVideoInfoScanner()
       partItem.SetPath(path);
       partItem.SetDynPath(path);
 
-      // Updates partItem in place to its main playlist
-      CFileItemList partItems;
-      ResolveBlurayPlaylist(&partItem, partItems);
-      if (partItems.IsEmpty())
+      partItem.GetVideoInfoTag()->m_streamDetails.Reset();
+      bool resolved;
+      if (playlistChosen)
+        resolved = CDiscDirectoryHelper::ReadResolvedPlaylist(partItem); // Refresh
+      else
+      {
+        CFileItemList partItems;
+        ResolveBlurayPlaylist(&partItem, partItems);
+        resolved = !partItems.IsEmpty();
+      }
+
+      if (!resolved)
       {
         CLog::LogF(LOGERROR, "Unable to resolve a bluray playlist for {} of {}",
                    CURL::GetRedacted(path), CURL::GetRedacted(originalPath));
@@ -1212,7 +1223,10 @@ CVideoInfoScanner::~CVideoInfoScanner()
     {
       if (totalDuration > 0)
         streamDetails.SetVideoDuration(0, totalDuration);
-      tag->m_streamDetails = streamDetails;
+
+      // Nfo streamdetails describe the stack as a whole, so they are what it keeps
+      if (!tag->HasNFOStreamDetails())
+        tag->m_streamDetails = streamDetails;
 
       // Record where each part ends, so that playback does not have to derive the durations again
       // (a resolved bluray:// playlist cannot be demuxed for its duration)
@@ -1232,6 +1246,53 @@ CVideoInfoScanner::~CVideoInfoScanner()
                CURL::GetRedacted(originalPath), CURL::GetRedacted(stackPath), totalDuration);
 
     item->SetProperty("original_listitem_url", originalPath);
+    return true;
+  }
+
+  // Rebuilds a stack from the playlists an nfo recorded for its parts, matching on the part paths
+  // rather than their order so that a part that has been added, removed or renamed cannot end up
+  // with another part's playlist. Returns whether any playlist was applied
+  bool ApplyStackParts(CFileItem* item, const std::vector<XFILE::StackPartPlaylist>& stackParts)
+  {
+    if (stackParts.empty())
+      return false;
+
+    const std::string originalPath{item->GetDynPath()};
+
+    std::vector<std::string> paths;
+    if (!CStackDirectory::GetPaths(originalPath, paths))
+      return false;
+
+    std::vector<std::string> playlistPaths;
+    playlistPaths.reserve(paths.size());
+    size_t applied{0};
+
+    for (const std::string& path : paths)
+    {
+      const auto part{std::ranges::find_if(stackParts,
+                                           [&path](const XFILE::StackPartPlaylist& stackPart)
+                                           { return URIUtils::PathEquals(stackPart.file, path); })};
+      if (part == stackParts.end() || !IsBluray(path))
+      {
+        CLog::LogF(LOGDEBUG, "No playlist to apply to {} of {}", CURL::GetRedacted(path),
+                   CURL::GetRedacted(originalPath));
+        playlistPaths.emplace_back(path);
+        continue;
+      }
+
+      playlistPaths.emplace_back(URIUtils::GetBlurayPlaylistPath(path, part->playlist));
+      ++applied;
+    }
+
+    std::string stackPath;
+    if (applied == 0 || !CStackDirectory::ConstructStackPath(playlistPaths, stackPath))
+      return false;
+
+    item->SetDynPath(stackPath);
+    item->GetVideoInfoTag()->SetFileNameAndPath(stackPath);
+
+    CLog::LogF(LOGDEBUG, "Applied {} of {} recorded playlists to {}", applied, paths.size(),
+               CURL::GetRedacted(originalPath));
     return true;
   }
 
@@ -1414,6 +1475,11 @@ CVideoInfoScanner::~CVideoInfoScanner()
       bool mergedIntoExistingMovie{false};
       item.SetProperty("from_nfo", true);
 
+      // Refreshing the recorded playlists gives the durations, and so the stack times, that the
+      // nfo does not hold
+      if (URIUtils::IsStack(item.GetDynPath()) && ApplyStackParts(&item, loader->GetStackParts()))
+        ResolveBlurayStack(&item);
+
       CVideoInfoTag* tag{item.GetVideoInfoTag()};
       if (tag->HasVideoVersions())
       {
@@ -1421,6 +1487,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
         CFileItemList items;
         using enum CVideoDatabase::MatchingMask;
         m_database.GetSameVideoItems(item, items, UniqueId | (bDirNames ? Path : None));
+        erase_if(items, [tag](const std::shared_ptr<CFileItem>& current)
+                 { return tag->HasConflictingUniqueID(*current->GetVideoInfoTag()); });
         if (!items.IsEmpty())
         {
           // Movie already exists
@@ -1666,6 +1734,19 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
     CVideoInfoTag showInfo;
     m_database.GetTvShowInfo("", showInfo, showID);
+
+    // A show can have several folders, and the database returns only one of them. Local
+    // season art and actor thumbs belong to the folder being scanned.
+    std::vector<std::string> showPaths;
+    if (item->IsFolder() && m_database.GetPathsLinkedToTvShow(static_cast<int>(showID), showPaths))
+    {
+      const auto showPath =
+          std::ranges::find_if(showPaths, [item](const std::string& path)
+                               { return URIUtils::PathEquals(path, item->GetPath(), true); });
+      if (showPath != showPaths.end())
+        showInfo.m_strPath = *showPath;
+    }
+
     InfoRet ret = OnProcessSeriesFolder(files, scraper, useLocal, showInfo, progress);
 
     if (ret == InfoRet::ADDED)
@@ -2035,6 +2116,18 @@ CVideoInfoScanner::~CVideoInfoScanner()
     {
       path = URIUtils::GetBlurayPlaylistPath(path, playlist);
       pItem->SetDynPath(path);
+    }
+
+    // A bluray:// path means a playlist has been chosen, so get details here (if not present)
+    // An episode is matched against the disc, as its playlist may hold other episodes too
+    if (!libraryImport && URIUtils::IsBlurayPath(path) &&
+        !pItem->GetVideoInfoTag()->HasStreamDetails())
+    {
+      const bool read{content == ContentType::TVSHOWS && pItem->GetVideoInfoTag()->m_iEpisode > -1
+                          ? CDiscDirectoryHelper::ReadEpisodePlaylist(*pItem)
+                          : CDiscDirectoryHelper::ReadResolvedPlaylist(*pItem)};
+      if (read)
+        path = pItem->GetDynPath();
     }
 
     if (!libraryImport)
@@ -2897,8 +2990,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
           else
           {
             m_database.ConvertVideoToVersion(ContentToVideoDbType(content), idMovie, dbId,
-                                             idVideoAssetType, VideoAssetType::EXTRA,
-                                             DeleteMovieCascadeAction::ALL_ASSETS);
+                                             idVideoAssetType, VideoAssetType::EXTRA);
           }
         },
         [](const std::shared_ptr<CFileItem>& dirItem) { return !HasNoMedia(dirItem->GetPath()); },

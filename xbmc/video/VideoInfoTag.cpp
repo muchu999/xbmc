@@ -136,6 +136,8 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
 
   // we start with a <tag> tag
   TiXmlElement movieElement(tag.c_str());
+  if (tag == "movie" || tag == "tvshow" || tag == "episodedetails" || tag == "musicvideo")
+    movieElement.SetAttribute("version", 0);
   TiXmlNode *movie = node->InsertEndChild(movieElement);
 
   if (!movie) return false;
@@ -169,6 +171,8 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
   {
     TiXmlElement epbookmark("episodebookmark");
     XMLUtils::SetDouble(&epbookmark, "position", m_EpBookmark.timeInSeconds);
+    if (m_EpBookmark.totalTimeInSeconds > 0)
+      XMLUtils::SetDouble(&epbookmark, "total", m_EpBookmark.totalTimeInSeconds);
     if (!m_EpBookmark.playerState.empty())
     {
       TiXmlElement playerstate("playerstate");
@@ -196,7 +200,9 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
   XMLUtils::SetString(movie, "outline", m_strPlotOutline);
   XMLUtils::SetString(movie, "plot", m_strPlot);
   XMLUtils::SetString(movie, "tagline", m_strTagLine);
-  XMLUtils::SetInt(movie, "runtime", GetDuration() / 60);
+  // The stream duration is saved in <fileinfo>, so don't let it replace the scraped runtime
+  if (const unsigned int runtime{(GetStaticDuration() + 30) / 60}; runtime > 0)
+    XMLUtils::SetInt(movie, "runtime", runtime);
   if (m_strPictureURL.HasData())
   {
     CXBMCTinyXML doc;
@@ -295,6 +301,7 @@ bool CVideoInfoTag::Save(TiXmlNode *node, const std::string &tag, bool savePathI
       XMLUtils::SetInt(&stream, "height", m_streamDetails.GetVideoHeight(iStream));
       XMLUtils::SetInt(&stream, "durationinseconds", m_streamDetails.GetVideoDuration(iStream));
       XMLUtils::SetString(&stream, "stereomode", m_streamDetails.GetStereoMode(iStream));
+      XMLUtils::SetString(&stream, "language", m_streamDetails.GetVideoLanguage(iStream));
       XMLUtils::SetString(&stream, "hdrtype", m_streamDetails.GetVideoHdrType(iStream));
       XMLUtils::SetString(&stream, "hdrdetail", m_streamDetails.GetVideoHdrDetail(iStream));
       streamdetails.InsertEndChild(stream);
@@ -1180,6 +1187,19 @@ bool CVideoInfoTag::HasUniqueID() const
   return !m_uniqueIDs.empty();
 }
 
+bool CVideoInfoTag::HasConflictingUniqueID(const CVideoInfoTag& other) const
+{
+  // Old records may have the type 'unknown', which does not identify the kind of id
+  return std::ranges::any_of(m_uniqueIDs,
+                             [&other](const auto& id)
+                             {
+                               const auto it{other.m_uniqueIDs.find(id.first)};
+                               return id.first != "unknown" && !id.second.empty() &&
+                                      it != other.m_uniqueIDs.end() && !it->second.empty() &&
+                                      it->second != id.second;
+                             });
+}
+
 std::string CVideoInfoTag::GetCast(const std::string& separator,
                                    bool bIncludeRole /*= false*/) const
 {
@@ -1264,6 +1284,7 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
   if (epbookmark)
   {
     XMLUtils::GetDouble(epbookmark, "position", m_EpBookmark.timeInSeconds);
+    XMLUtils::GetDouble(epbookmark, "total", m_EpBookmark.totalTimeInSeconds);
     const TiXmlElement *playerstate = epbookmark->FirstChildElement("playerstate");
     if (playerstate)
     {
@@ -1603,7 +1624,6 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
         StringUtils::ToLower(p->m_strStereoMode);
         StringUtils::ToLower(p->m_strLanguage);
         StringUtils::ToLower(p->m_strHdrType);
-        StringUtils::ToLower(p->m_strHdrDetail);
         m_streamDetails.AddStream(p);
       }
       nodeDetail = nullptr;
@@ -1633,6 +1653,11 @@ void CVideoInfoTag::ParseNative(const TiXmlElement* movie, bool prioritise)
           StringUtils::CompareNoCase("<episodeguide", epguide->FirstChild()->Value(), 13) == 0)
       {
         m_strEpisodeGuide = epguide->FirstChild()->Value();
+      }
+      // Store plain text (e.g. json) unescaped, as a scraper would
+      else if (!epguide->FirstChildElement() && epguide->GetText())
+      {
+        SetEpisodeGuide(epguide->GetText());
       }
       else
       {

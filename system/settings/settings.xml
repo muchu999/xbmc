@@ -1102,7 +1102,7 @@
         </setting>
         <setting id="videolibrary.similarvideoaction" type="integer" label="40222" help="40203">
           <level>1</level>
-          <default>0</default>
+          <default>2</default>
           <constraints>
             <options>
               <option label="13551">0</option> <!-- off -->
@@ -2877,7 +2877,7 @@
         </setting>
         <setting id="gamesgeneral.enablerewind" type="boolean" label="35203" help="35204">
           <level>0</level>
-          <default>true</default>
+          <default>false</default>
           <control type="toggle" />
         </setting>
         <setting id="gamesgeneral.rewindtime" type="integer" label="35205" help="35206">
@@ -2894,6 +2894,18 @@
           <control type="slider" format="integer">
             <popup>true</popup>
             <formatlabel>14045</formatlabel>
+          </control>
+        </setting>
+      </group>
+      <group id="2" label="35320">
+        <setting id="gamesgeneral.cheatspath" type="path" label="35321" help="35322">
+          <level>3</level>
+          <default></default>
+          <constraints>
+            <allowempty>true</allowempty>
+          </constraints>
+          <control type="button" format="path">
+            <heading>35321</heading>
           </control>
         </setting>
       </group>

@@ -312,12 +312,6 @@ bool CVideoSettings::operator!=(const CVideoSettings& right) const
   if (m_AudioStream != right.m_AudioStream) return true;
   if (m_SubtitleStream != right.m_SubtitleStream) return true;
   if (m_SubtitleDelay != right.m_SubtitleDelay) return true;
-  //cl m_subtitleVerticalPosition+save used here in comparison but not stored in database, which means every file that 
-  // eventually displays subtitles will change these value and result in unchanged settings being stored in the database, 
-  // without the changed fields...To investigate further
-  if (m_subtitleVerticalPositionSave == true)
-	if (m_subtitleVerticalPosition != right.m_subtitleVerticalPosition) return true;
-  //if (m_subtitleVerticalPositionSave != right.m_subtitleVerticalPositionSave) return true;
   if (m_SubtitleOn != right.m_SubtitleOn) return true;
   if (m_Brightness != right.m_Brightness) return true;
   if (m_Contrast != right.m_Contrast) return true;
