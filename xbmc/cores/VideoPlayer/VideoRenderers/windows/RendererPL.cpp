@@ -296,8 +296,8 @@ bool CRendererPL::Configure(const VideoPicture& picture, float fps, unsigned ori
   // Auto switch HDR only if supported and "Settings/Player/Use HDR display capabilities" = ON
   if (m_AutoSwitchHDR)
   {
-    m_initialHdrEnabled = DX::DeviceResources::Get()->IsHDROutput1();
-    CLog::LogF(LOGDEBUG, "Storing Windows HDR state: {}", m_initialHdrEnabled ? "ON" : "OFF");
+    //m_initialHdrEnabled = DX::DeviceResources::Get()->IsHDROutput1();
+    //CLog::LogF(LOGDEBUG, "Storing Windows HDR state: {}", m_initialHdrEnabled ? "ON" : "OFF");
 
 	const bool streamIsHDR = (picture.color_primaries == AVCOL_PRI_BT2020) &&
 	  (picture.color_transfer == AVCOL_TRC_SMPTE2084 ||

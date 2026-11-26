@@ -38,6 +38,7 @@ class CGameClientDiscModel;
 
 class CGameClientCheats;
 class CGameClientCheevos;
+class CGameClientFastForward;
 class CGameClientInGameSaves;
 class CGameClientInput;
 class CGameClientProperties;
@@ -198,6 +199,18 @@ public:
     Restore,
   };
   size_t GetSerializeSize(SerializeSizeMode mode = SerializeSizeMode::Lazy) const;
+
+  /*!
+   * \brief False once the client has run for a while and still gives no
+   *        savestate size, as it then can't save its state
+   *
+   * Reads what the client last answered to GetSerializeSize(), without asking it.
+   */
+  bool SupportsSavestates() const { return !m_noSerializeSize; }
+
+  // Some clients only give a savestate size once they have booted, so no size
+  // means no savestates only after this many frames, about ten seconds of play
+  static constexpr unsigned int SAVESTATE_SIZE_FRAMES = 600;
   bool Serialize(uint8_t* data, size_t size);
   RestoreResult Deserialize(const uint8_t* data,
                             size_t size,
@@ -269,7 +282,9 @@ private:
   static bool cb_enable_hardware_rendering(void* kodiInstance,
                                            const game_hw_rendering_properties* properties);
   static void cb_close_game(KODI_HANDLE kodiInstance);
+  static void cb_report_missing_file(KODI_HANDLE kodiInstance, const char* path);
   static double cb_get_playback_speed(KODI_HANDLE kodiInstance);
+  static void cb_set_fast_forwarding(KODI_HANDLE kodiInstance, bool fastForward, double ratio);
   static void cb_set_game_timing(KODI_HANDLE kodiInstance, const game_system_timing* timingInfo);
   static bool cb_start_stream(KODI_HANDLE kodiInstance, KODI_GAME_STREAM_HANDLE stream);
   static KODI_GAME_STREAM_HANDLE cb_open_stream(KODI_HANDLE kodiInstance,
@@ -324,6 +339,8 @@ private:
                                               const struct game_rc_leaderboard_scoreboard* data);
   static void cb_rc_on_reset(KODI_HANDLE kodiInstance);
   static void cb_rc_on_subset_completed(KODI_HANDLE kodiInstance, const char* title);
+  static void cb_rc_on_achievement_sets(KODI_HANDLE kodiInstance,
+                                        const game_rc_achievement_sets* data);
   //@}
 
   /*!
@@ -360,6 +377,7 @@ private:
   // Properties of the current playing file
   std::atomic_bool m_bIsPlaying; // True between OpenFile() and CloseFile()
   std::atomic_bool m_hasFrameRun{false};
+  std::atomic<unsigned int> m_framesRun{0}; // Counted up to SAVESTATE_SIZE_FRAMES
   // The speed the player is running at, as a multiple of normal speed. Written
   // by the thread that changes the speed and read by the client's own, so it is
   // atomic; a client asks for it from inside a call of its own, which can be on
@@ -371,9 +389,12 @@ private:
   // would read as paused and have a client behave as though the user had
   // stopped the game before it started.
   std::atomic<double> m_playbackSpeed{1.0};
+  const std::unique_ptr<CGameClientFastForward> m_fastForward;
   std::string m_gamePath;
+  std::string m_missingFile; // The first file the client reported missing while loading
   bool m_bRequiresGameLoop = false;
   mutable size_t m_serializeSize = 0;
+  mutable std::atomic_bool m_noSerializeSize{false};
   IGameInputCallback* m_input = nullptr; // The input callback passed to OpenFile()
   std::atomic<double> m_framerate{0.0}; // Video frame rate (fps)
   std::atomic<double> m_samplerate{0.0}; // Audio sample rate (Hz)

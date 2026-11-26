@@ -447,7 +447,16 @@ public:
   void DeleteTvShow(int idTvShow, bool bKeepId = false);
   void DeleteTvShow(const std::string& strPath);
   void DeleteSeason(int idSeason, bool bKeepId = false);
-  void DeleteEpisode(int idEpisode, bool bKeepId = false);
+
+  /*!
+   * \brief Remove an episode from the library.
+   * \param[in] idEpisode The id of the episode
+   * \param[in] bKeepId Keep the episode's entry, so that its details are updated in place
+   * \param[in] hashAction Preserve or invalidate the hash of the episode's path, and its show's
+   */
+  void DeleteEpisode(int idEpisode,
+                     bool bKeepId = false,
+                     DeleteMovieHashAction hashAction = DeleteMovieHashAction::HASH_DELETE);
   void DeleteMusicVideo(int idMusicVideo, bool bKeepId = false);
   void DeleteDetailsForTvShow(int idTvShow);
   void DeleteStreamDetails(int idFile);
@@ -626,6 +635,10 @@ public:
   // scanning hashes and paths scanned
   bool SetPathHash(const std::string &path, const std::string &hash);
   bool GetPathHash(const std::string &path, std::string &hash);
+  /*! \brief Clear the hash of the folder of a video's path, and of the folder above it
+   where that is what names the video, so that the next scan looks at them again.
+   */
+  void InvalidatePathHash(const std::string& strPath);
   bool GetPaths(std::set<std::string, std::less<>>& paths);
   bool GetPathsForTvShow(int idShow, std::set<int>& paths);
 
@@ -647,6 +660,26 @@ public:
   bool GetSubPaths(const std::string& basepath,
                    std::vector<std::pair<int, std::string>>& subpaths,
                    bool excludeDiscPaths = true);
+
+  /*! \brief Normalise a directory to the form the path table stores it in.
+   \param directory the directory as it was given
+   \return the same directory with platform separators and a trailing separator
+   */
+  static std::string ToStoredPath(const std::string& directory);
+
+  /*! \brief Resolve the path ids a library clean should cover.
+   \param directory a directory to restrict the clean to, empty for the whole library.
+                    Normalised with ToStoredPath before matching.
+   \param content the content type to clean for ("movies", "tvshows", "musicvideos"),
+                  empty for any. With a directory, "tvshows" also matches paths
+                  resolving to "seasons" or "episodes".
+   \param paths the matching path ids, including subpaths and the disc and archive paths
+                below them. Left empty when nothing matches.
+   \return true on success (even with no matches), false on a database error
+   */
+  bool GetPathsForCleaning(const std::string& directory,
+                           const std::string& content,
+                           std::set<int>& paths);
 
   bool GetSourcePath(const std::string &path, std::string &sourcePath);
   bool GetSourcePath(const std::string& path,
@@ -1046,7 +1079,8 @@ public:
                      int idVideoAsset,
                      VideoAssetType videoAssetType,
                      CFileItem& item);
-  bool DeleteVideoAsset(int idFile);
+  bool DeleteVideoAsset(int idFile,
+                        DeleteMovieHashAction hashAction = DeleteMovieHashAction::HASH_DELETE);
   bool IsDefaultVideoVersion(int idFile);
   bool GetVideoVersionTypes(VideoDbContentType idContent,
                             VideoAssetType assetType,
@@ -1316,7 +1350,6 @@ private:
   void SplitPath(const std::string& strFileNameAndPath,
                  std::string& strPath,
                  std::string& strFileName) const;
-  void InvalidatePathHash(const std::string& strPath);
 
   /*! \brief Clear the hash of a path, without adding it to the path table if unknown
    \param strPath the path to clear the hash of

@@ -86,6 +86,29 @@ bool CRPBaseRenderer::IsVisible() const
   return m_renderFrameCount <= m_lastRender + VISIBLE_DURATION_FRAME_COUNT;
 }
 
+void CRPBaseRenderer::SetUsed()
+{
+  m_lastUse = m_renderFrameCount;
+  m_texturesReleased = false;
+}
+
+bool CRPBaseRenderer::IsUnused() const
+{
+  return m_renderFrameCount > m_lastUse + VISIBLE_DURATION_FRAME_COUNT;
+}
+
+void CRPBaseRenderer::ReleaseTextures()
+{
+  if (m_texturesReleased)
+    return;
+
+  Flush();
+  if (m_shaderPreset)
+    m_shaderPreset->ReleaseTextures();
+
+  m_texturesReleased = true;
+}
+
 IRenderBuffer* CRPBaseRenderer::GetRenderBuffer() const
 {
   if (m_renderBuffer != nullptr)
@@ -111,6 +134,12 @@ void CRPBaseRenderer::SetBuffer(IRenderBuffer* buffer)
   }
 }
 
+void CRPBaseRenderer::SetSpeed(double speed)
+{
+  if (m_shaderPreset)
+    m_shaderPreset->SetSpeed(speed);
+}
+
 void CRPBaseRenderer::RenderFrame(bool clear, uint8_t alpha)
 {
   m_lastRender = m_renderFrameCount;
@@ -120,7 +149,7 @@ void CRPBaseRenderer::RenderFrame(bool clear, uint8_t alpha)
 
   PreRender(clear);
   ManageRenderArea(*m_renderBuffer);
-  RenderInternal(clear, alpha);
+  RenderInternal(alpha);
   PostRender();
 
   m_renderBuffer->SetRendered(true);
@@ -154,11 +183,6 @@ void CRPBaseRenderer::SetShaderPreset(const std::string& presetPath)
     m_renderSettings.VideoSettings().SetShaderPreset(presetPath);
     m_bShadersNeedUpdate = true;
   }
-}
-
-void CRPBaseRenderer::SetPixels(const std::string& pixelPath)
-{
-  m_renderSettings.VideoSettings().SetPixels(pixelPath);
 }
 
 void CRPBaseRenderer::ManageRenderArea(const IRenderBuffer& renderBuffer)
@@ -250,24 +274,6 @@ void CRPBaseRenderer::ManageRenderArea(const IRenderBuffer& renderBuffer)
 
   // Adapt the drawing rect points if we have to rotate
   m_rotatedDestCoords = CRenderUtils::ReorderDrawPoints(destRect, rotationDegCCW);
-
-  if (destRect != m_lastLoggedDestRect || fullDestRect != m_lastLoggedFullDestRect ||
-      stretchMode != m_lastLoggedStretchMode)
-  {
-    CLog::Log(LOGDEBUG,
-              "RetroPlayer[RENDER]: Stretch mode {}, source {}x{}, view window "
-              "({:.0f},{:.0f})-({:.0f},{:.0f}), viewport ({:.0f},{:.0f})-({:.0f},{:.0f}), "
-              "dest ({:.0f},{:.0f})-({:.0f},{:.0f}), full dest {:.0f}x{:.0f}, zoom {:.3f}, "
-              "pixel ratio {:.3f}",
-              static_cast<int>(stretchMode), sourceWidth, sourceHeight, viewRect.x1, viewRect.y1,
-              viewRect.x2, viewRect.y2, viewPort.x1, viewPort.y1, viewPort.x2, viewPort.y2,
-              destRect.x1, destRect.y1, destRect.x2, destRect.y2, m_fullDestWidth, m_fullDestHeight,
-              zoomAmount, pixelRatio);
-
-    m_lastLoggedDestRect = destRect;
-    m_lastLoggedFullDestRect = fullDestRect;
-    m_lastLoggedStretchMode = stretchMode;
-  }
 
   // Update video shader source size
   if (m_shaderPreset)

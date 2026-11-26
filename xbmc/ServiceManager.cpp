@@ -227,8 +227,8 @@ bool CServiceManager::InitStageThree(const std::shared_ptr<CProfileManager>& pro
   m_peripherals->Initialise();
 
   m_gameServices = std::make_unique<GAME::CGameServices>(
-      *m_gameControllerManager, *m_gameRenderManager, *m_peripherals, *profileManager,
-      *m_inputManager, *m_addonMgr, *m_fileExtensionProvider);
+      *m_gameControllerManager, *m_gameRenderManager, *m_peripherals, *m_inputManager, *m_addonMgr,
+      *m_fileExtensionProvider);
   m_gameServices->Initialize();
 
   m_contextMenuManager->Init();
@@ -317,7 +317,11 @@ void CServiceManager::DeinitStageOne()
   m_slideShowDelegator.reset();
 #ifdef HAS_PYTHON
   CScriptInvocationManager::GetInstance().UnregisterLanguageInvocationHandler(m_XBPython.get());
-  m_XBPython.reset();
+  // a script left running can still call into it from its own thread
+  if (m_XBPython->IsPythonLeftRunning())
+    static_cast<void>(m_XBPython.release());
+  else
+    m_XBPython.reset();
 #endif
 
   m_Platform->DeinitStageOne();

@@ -8,13 +8,18 @@
 
 #pragma once
 
+#include "utils/Observer.h"
+
 #include <atomic>
+#include <optional>
 #include <string>
 
 class CCriticalSection;
 
 struct AddonInstance_Game;
+struct game_rc_achievement;
 struct game_rc_achievement_challenge;
+struct game_rc_achievement_sets;
 struct game_rc_achievement_progress;
 struct game_rc_achievement_progress_indicator;
 struct game_rc_leaderboard;
@@ -32,17 +37,21 @@ namespace GAME
 
 class CAchievementRuntime;
 class CGameClient;
+struct AchievementInfo;
 
 /*!
  * \ingroup games
  */
-class CGameClientCheevos
+class CGameClientCheevos : public Observer
 {
 public:
   CGameClientCheevos(CGameClient& gameClient,
                      AddonInstance_Game& addonStruct,
                      CCriticalSection& clientAccess);
-  ~CGameClientCheevos();
+  ~CGameClientCheevos() override;
+
+  // Implementation of Observer
+  void Notify(const Observable& obs, const ObservableMessage msg) override;
 
   /*!
    * \name RetroAchievements events received from the add-on
@@ -54,8 +63,7 @@ public:
   void OnGameLoaded(const game_rc_game_loaded& data);
   void OnAchievementTriggered(const game_rc_achievement_triggered& data);
   static void OnAchievementTriggered(const game_rc_achievement_triggered& data,
-                                     CAchievementRuntime& runtime,
-                                     bool encoreModeEnabled);
+                                     CAchievementRuntime& runtime);
   void OnGameCompleted(const std::string& title, bool hardcore);
   void OnRichPresenceUpdated(const std::string& evaluation);
   void OnLoginResult(const game_rc_login_result& data);
@@ -81,7 +89,19 @@ public:
   void OnReset();
 
   void OnSubsetCompleted(const std::string& title);
+
+  void OnAchievementSets(const game_rc_achievement_sets& data);
   //@}
+
+  /*!
+   * \brief Set whether a loaded achievement starts out earned
+   *
+   * Encore re-arms everything earned before, so an encore run starts with
+   * nothing earned and keeps only the date of the earlier unlock.
+   */
+  static void SetEarned(AchievementInfo& info,
+                        const game_rc_achievement& achievement,
+                        bool encoreModeEnabled);
 
   /*!
    * \brief Drop the published state when the game closes
@@ -106,6 +126,24 @@ public:
    */
   bool SendCredentials();
 
+  /*!
+   * \brief Watch the achievement modes for as long as the client is loaded
+   *
+   * Called from CGameClient, which holds no lock at that point. It must stay
+   * that way: a settings change reaches Notify() with the observer list held,
+   * and Notify() then takes the client lock, so registering with the client
+   * lock already held would be the other order.
+   *
+   * Not done when the subsystem is built either - the game services are still
+   * being constructed at that point, and the settings live there.
+   */
+  void ObserveSettings();
+
+  /*!
+   * \brief Stop watching, for a client that outlives the settings
+   */
+  void StopObservingSettings();
+
 private:
   /*!
    * \brief Give the client the RetroAchievements account to sign in with
@@ -115,11 +153,56 @@ private:
   bool SetRetroAchievementsCredentials(const std::string& username, const std::string& token);
 
   /*!
+   * \brief Tell the client which mode achievements are being earned in
+   *
+   * Applied as it arrives rather than at the next load: the client resets the
+   * game when hardcore is switched on, because RetroAchievements does not
+   * allow a session begun in casual mode to carry on into hardcore.
+   */
+  bool SetHardcoreEnabled(bool enabled);
+
+  /*!
+   * \brief Turn hardcore off after the client wouldn't take it
+   *
+   * The client plays on in casual mode, so Kodi stops enforcing hardcore and
+   * stops saying it is on.
+   */
+  void DropHardcore();
+
+  /*!
    * \brief Tell the client that earned achievements are armed again
    *
    * Read when a game loads, so a client told once forgets by the next one.
    */
   bool SetEncoreModeEnabled(bool enabled);
+
+  /*!
+   * \brief Whether the client reports a game's achievement sets
+   */
+  bool ReportsAchievementSets() const;
+
+  /*!
+   * \brief Tell the client to turn an achievement set on or off
+   */
+  bool SetAchievementSetEnabled(unsigned int setId, bool enabled);
+
+  /*!
+   * \brief Turn a set on or off at the player's request, and remember it
+   *
+   * The game's own set stays on: only subsets can be turned off.
+   */
+  bool OnAchievementSetToggled(unsigned int setId, bool enabled);
+
+  /*!
+   * \brief Show the game's achievement totals, if the toast is waiting
+   */
+  void QueueStartupToast();
+
+  struct StartupToast
+  {
+    std::string icon;
+    std::string title;
+  };
 
   CGameClient& m_gameClient;
   AddonInstance_Game& m_struct;
@@ -130,6 +213,22 @@ private:
   //! callbacks read it on the add-on's thread while loading and closing a game
   //! write it on Kodi's.
   std::atomic<bool> m_encoreModeEnabled{false};
+
+  //! The encore setting as last seen, so a change made during a game is
+  //! announced once. Atomic for the same reason as m_hardcoreEnabled.
+  std::atomic<bool> m_encoreSetting{false};
+
+  //! Hardcore as last applied to this client. Atomic because the setting can
+  //! change on the player's thread as well as Kodi's.
+  std::atomic<bool> m_hardcoreEnabled{false};
+
+  //! The game-start toast until it is shown. Only touched on the add-on's
+  //! thread.
+  std::optional<StartupToast> m_startupToast;
+
+  //! Whether this instance is registered with the game settings. Only touched
+  //! on Kodi's thread, either side of a game.
+  bool m_observingSettings{false};
 };
 } // namespace GAME
 } // namespace KODI

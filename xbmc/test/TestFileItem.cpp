@@ -6,6 +6,7 @@
  *  See LICENSES/README.md for more information.
  */
 
+#include "DatabaseManager.h"
 #include "FileItem.h"
 #include "FileItemList.h"
 #include "LangInfo.h"
@@ -13,6 +14,7 @@
 #include "URL.h"
 #include "Util.h"
 #include "filesystem/Directory.h"
+#include "filesystem/SpecialProtocol.h"
 #include "media/MediaType.h"
 #include "music/tags/MusicInfoTag.h"
 #include "platform/Filesystem.h"
@@ -22,10 +24,14 @@
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
 #include "settings/lib/SettingsManager.h"
+#include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
+#include "video/VideoDatabase.h"
 #include "video/VideoInfoTag.h"
 
 #include <fstream>
+#include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -1046,6 +1052,24 @@ TEST(TestFileItem, UpdateInfoKeepsAResolvedDynPath)
   EXPECT_EQ("/resolved/real-stream.mkv", target.GetDynPath());
 }
 
+TEST(TestFileItem, UpdateInfoUpdatesLabelForResolvedStrm)
+{
+  CFileItem target;
+  target.SetPath("/library/movie.strm");
+  target.SetDynPath("https://example.com/movie.mp4");
+  target.SetLabel("Library title");
+
+  CFileItem source;
+  source.SetPath("/library/movie.strm");
+  source.SetDynPath("https://example.com/movie.mp4");
+  source.SetLabel("Updated title");
+
+  target.UpdateInfo(source);
+
+  EXPECT_EQ("Updated title", target.GetLabel());
+  EXPECT_EQ("https://example.com/movie.mp4", target.GetDynPath());
+}
+
 TEST(TestFileItem, UpdateInfoTakesADynPathTheSourceActuallyHas)
 {
   CFileItem target = MakeResolvedPluginItem();
@@ -1065,6 +1089,93 @@ TEST(TestFileItem, MergeInfoKeepsAResolvedDynPath)
   target.MergeInfo(MakeAddonUpdateItem());
 
   EXPECT_EQ("/resolved/real-stream.mkv", target.GetDynPath());
+}
+
+namespace
+{
+//! Brings the video database up through the database manager, as CFileItem::LoadDetails opens
+//! it, and puts the manager back as it was.
+class CScopedVideoLibrary
+{
+public:
+  CScopedVideoLibrary()
+    : m_advanced(CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()),
+      m_restore(m_advanced->m_databaseVideo)
+  {
+    m_advanced->m_databaseVideo.type = "sqlite3";
+    m_advanced->m_databaseVideo.host = CSpecialProtocol::TranslatePath("special://temp/");
+    m_advanced->m_databaseVideo.name = "TestFileItemVideoLibrary";
+
+    CServiceBroker::GetDatabaseManager().Deinitialize();
+    m_initialized = CServiceBroker::GetDatabaseManager().Initialize();
+  }
+
+  ~CScopedVideoLibrary()
+  {
+    m_advanced->m_databaseVideo = m_restore;
+    CServiceBroker::GetDatabaseManager().Deinitialize();
+  }
+
+  bool IsInitialized() const { return m_initialized; }
+
+private:
+  std::shared_ptr<CAdvancedSettings> m_advanced;
+  DatabaseSettings m_restore;
+  bool m_initialized{false};
+};
+} // namespace
+
+TEST(TestFileItem, LoadDetailsGivesALibraryItemTheFileItPlays)
+{
+  const CScopedVideoLibrary library;
+  ASSERT_TRUE(library.IsInitialized());
+
+  const std::string file{"/media/movies/Movie (2026)/movie.mkv"};
+  int idMovie{-1};
+  {
+    CVideoDatabase db;
+    ASSERT_TRUE(db.Open());
+    CVideoInfoTag movie;
+    movie.m_strTitle = "Movie";
+    movie.m_strFileNameAndPath = file;
+    idMovie = db.SetDetailsForMovie(movie, {});
+    db.Close();
+  }
+  ASSERT_GE(idMovie, 0);
+
+  const std::string path{StringUtils::Format("videodb://movies/titles/{}", idMovie)};
+  CFileItem item(path, false);
+
+  ASSERT_TRUE(item.LoadDetails());
+  EXPECT_EQ(path, item.GetPath());
+  EXPECT_EQ(file, item.GetDynPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesDynPathForRegularFiles)
+{
+  CFileItem item;
+  item.SetPath("/local/path/video.mkv");
+  item.SetDynPath("smb://server/share/video.mkv");
+
+  EXPECT_EQ("smb://server/share/video.mkv", item.GetSubtitleAnchorPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesPathForStrmFiles)
+{
+  CFileItem item;
+  item.SetPath("/local/path/video.strm");
+  item.SetDynPath("https://example.com/video.m3u8");
+
+  EXPECT_EQ("/local/path/video.strm", item.GetSubtitleAnchorPath());
+}
+
+TEST(TestFileItem, GetSubtitleAnchorPathUsesDynPathForPluginStrmRoutes)
+{
+  CFileItem item;
+  item.SetPath("plugin://plugin.video.example/play/video.strm");
+  item.SetDynPath("https://example.com/video.m3u8");
+
+  EXPECT_EQ("https://example.com/video.m3u8", item.GetSubtitleAnchorPath());
 }
 
 TEST(TestFileItem, TestLabel)
@@ -1477,4 +1588,16 @@ TEST(TestFileItemIsSamePath, OriginalListItemUrlIsTheIdentity)
 
   EXPECT_TRUE(Same(resolved, MakeItem("plugin://source/item/1")));
   EXPECT_FALSE(Same(resolved, MakeItem("plugin://source/item/2")));
+}
+
+TEST(TestFileItemList, AddSortMethodLeavesTheSortOrderToTheView)
+{
+  CFileItemList items;
+  items.AddSortMethod(SortBy::DATE, 552, LABEL_MASKS());
+  items.AddSortMethod(SortBy::LABEL, SortAttributeNone, 551, LABEL_MASKS());
+
+  const auto& details = items.GetSortDetails();
+  ASSERT_EQ(2u, details.size());
+  for (const auto& sort : details)
+    EXPECT_EQ(SortOrder::NONE, sort.m_sortDescription.sortOrder);
 }

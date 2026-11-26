@@ -50,6 +50,7 @@
 #include "video/VideoInfoScanner.h"
 #include "video/VideoLibraryQueue.h"
 #include "video/dialogs/GUIDialogVideoInfo.h"
+#include "video/jobs/VideoLibraryRefreshingSourceJob.h"
 #include "view/GUIViewState.h"
 
 #include <utility>
@@ -801,6 +802,10 @@ void CGUIWindowVideoNav::GetContextButtons(int itemNumber, CContextButtons &butt
         {
           buttons.Add(CONTEXT_BUTTON_SET_CONTENT, 20442);
           buttons.Add(CONTEXT_BUTTON_SCAN, 13349);
+          if (CVideoLibraryQueue::GetInstance().IsRefreshingSource(item->GetPath()))
+            buttons.Add(CONTEXT_BUTTON_STOP_REFRESHING_CONTENT, 13364);
+          else
+            buttons.Add(CONTEXT_BUTTON_REFRESH_ALL_CONTENT, 13363);
         }
         else
           buttons.Add(CONTEXT_BUTTON_SET_CONTENT, 20333);
@@ -927,10 +932,17 @@ bool CGUIWindowVideoNav::OnContextButton(int itemNumber, CONTEXT_BUTTON button)
   {
   case CONTEXT_BUTTON_EDIT:
     {
-      const CONTEXT_BUTTON ret{
-          static_cast<CONTEXT_BUTTON>(CGUIDialogVideoInfo::ManageVideoItem(item))};
+      // the dialogs change the list item, which the loader thread writes
+      const CBackgroundInfoLoader::CItemHold itemHold{m_thumbLoader, item.get()};
+      const int ret{CGUIDialogVideoInfo::ManageVideoItem(item)};
 
-      if (ret != CONTEXT_BUTTON_CANCELLED)
+      // changed art of a movie only needs its own list item updated
+      if (ret == CONTEXT_BUTTON_SET_ART && item->HasVideoInfoTag() &&
+          UpdateMovieListItem(item->GetPath(), item->GetVideoInfoTag()->m_strFileNameAndPath, *item,
+                              false, nullptr))
+        return true;
+
+      if (ret >= 0)
       {
         Refresh(true);
         if (ret == CONTEXT_BUTTON_DELETE)
@@ -943,6 +955,7 @@ bool CGUIWindowVideoNav::OnContextButton(int itemNumber, CONTEXT_BUTTON button)
     }
     case CONTEXT_BUTTON_SET_ART:
     {
+      const CBackgroundInfoLoader::CItemHold itemHold{m_thumbLoader, item.get()};
       const bool result{
           CGUIDialogVideoInfo::ChooseAndManageVideoItemArtwork(m_vecItems->Get(itemNumber))};
       Refresh();
@@ -980,6 +993,19 @@ bool CGUIWindowVideoNav::OnContextButton(int itemNumber, CONTEXT_BUTTON button)
     }
   case CONTEXT_BUTTON_SCAN_TO_LIBRARY:
     CGUIDialogVideoInfo::ShowFor(*item);
+    return true;
+
+  case CONTEXT_BUTTON_REFRESH_ALL_CONTENT:
+    if (CVideoLibraryQueue::GetInstance().IsScanningLibrary())
+    {
+      HELPERS::ShowOKDialogText(CVariant{13363}, CVariant{14057});
+      return true;
+    }
+    CVideoLibraryQueue::GetInstance().AddJob(new CVideoLibraryRefreshingSourceJob(item->GetPath()));
+    return true;
+
+  case CONTEXT_BUTTON_STOP_REFRESHING_CONTENT:
+    CVideoLibraryQueue::GetInstance().StopRefreshingSource(item->GetPath());
     return true;
 
   default:

@@ -21,9 +21,10 @@ extern "C" {
 #include <libplacebo/colorspace.h>
 }
 
-#include <vector>
-#include <string>
 #include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 class CSetting;
 
@@ -34,6 +35,14 @@ class CSetting;
 #define FRAME_TYPE_B     3
 #define FRAME_TYPE_D     4
 
+// Dolby Vision RPU for UWP/Xbox Dolby Vision renderer effect
+struct DoviRpu
+{
+  int profile = 0;
+  int compatibilityId = 0;
+  // whole RPU NAL unit (header, prefix, RPU), emulation prevention bytes removed
+  std::vector<uint8_t> data;
+};
 
 // should be entirely filled by all codecs
 struct VideoPicture
@@ -72,6 +81,7 @@ public:
   StreamHdrType hdrType;
   StreamHdrType hdrTypeAlt;
   std::string strDVELType;
+  std::shared_ptr<const DoviRpu> doviRpu;
 
   bool hasDisplayMetadata = false;
   AVMasteringDisplayMetadata displayMetadata = {};

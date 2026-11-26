@@ -69,6 +69,12 @@
 
 #include <mutex>
 
+namespace
+{
+// buffers older than this are fully redrawn
+constexpr int MAX_BUFFER_AGE = 10;
+} // namespace
+
 // Dialog includes
 #include "music/dialogs/GUIDialogMusicOSD.h"
 #include "music/dialogs/GUIDialogVisualisationPresetList.h"
@@ -1035,8 +1041,11 @@ bool CGUIWindowManager::SwitchToFullScreen(bool force /* = false */)
   const auto appPlayer = components.GetComponent<CApplicationPlayer>();
 
   // See if we're playing a game
-  if (activeWindowID != WINDOW_FULLSCREEN_GAME && appPlayer->IsPlayingGame())
-    windowID = WINDOW_FULLSCREEN_GAME;
+  if (appPlayer->IsPlayingGame())
+  {
+    if (activeWindowID != WINDOW_FULLSCREEN_GAME)
+      windowID = WINDOW_FULLSCREEN_GAME;
+  }
 
   // See if we're playing a video
   else if (activeWindowID != WINDOW_FULLSCREEN_VIDEO && appPlayer->IsPlayingVideo())
@@ -1426,12 +1435,14 @@ bool CGUIWindowManager::Render()
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_guiVisualizeDirtyRegions;
   if (visualizeDirtyRegions)
     bufferAge = 20;
-  if (bufferAge)
-    m_tracker.CleanMarkedRegions(bufferAge + 1);
-  else
-    m_tracker.CleanMarkedRegions(10);
+  // the buffer age counts presented frames and varies between frames, so keep the regions
+  // independently of it and only age them when a frame was presented
+  if (m_presentedFrame)
+    m_tracker.CleanMarkedRegions((visualizeDirtyRegions ? bufferAge : MAX_BUFFER_AGE) + 1);
+  m_presentedFrame = false;
 
-  CDirtyRegionList dirtyRegions = m_tracker.GetDirtyRegions();
+  // one frame more than needed, as some platforms report a fixed buffer age
+  CDirtyRegionList dirtyRegions = m_tracker.GetDirtyRegions(bufferAge + 1);
 
   bool hasRendered = false;
   // If we visualize the regions we will always render the entire viewport
@@ -1443,7 +1454,10 @@ bool CGUIWindowManager::Render()
     RenderPass();
     hasRendered = true;
   }
-  else if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_guiAlgorithmDirtyRegions == DIRTYREGION_SOLVER_FILL_VIEWPORT_ON_CHANGE)
+  else if (bufferAge > MAX_BUFFER_AGE ||
+           CServiceBroker::GetSettingsComponent()
+                   ->GetAdvancedSettings()
+                   ->m_guiAlgorithmDirtyRegions == DIRTYREGION_SOLVER_FILL_VIEWPORT_ON_CHANGE)
   {
     if (!dirtyRegions.empty())
     {
@@ -1478,6 +1492,7 @@ bool CGUIWindowManager::Render()
       CGUITexture::DrawQuad(i, 0x4c00ff00);
   }
 
+  m_presentedFrame |= hasRendered;
   return hasRendered;
 }
 
@@ -1490,14 +1505,27 @@ void CGUIWindowManager::AfterRender()
 
   // make copy of vector as we may remove items from it as we go
   auto activeDialogs = m_activeDialogs;
+  bool dialogDirty = false;
   for (const auto& window : activeDialogs)
   {
     if (window->IsDialogRunning())
     {
       window->AfterRender();
-      // Dialog state can affect visibility states
-      if (pWindow && window->IsControlDirty())
-        pWindow->MarkDirtyRegion();
+      dialogDirty |= window->IsControlDirty();
+    }
+  }
+
+  // Dialog state can affect visibility states of the window and the other dialogs
+  if (dialogDirty)
+  {
+    if (pWindow)
+      pWindow->MarkDirtyRegion();
+
+    CGUIMessage msg(GUI_MSG_NOTIFY_ALL, 0, 0, GUI_MSG_STATE_CHANGED);
+    for (const auto& window : activeDialogs)
+    {
+      if (window->IsDialogRunning())
+        window->OnMessage(msg);
     }
   }
 }

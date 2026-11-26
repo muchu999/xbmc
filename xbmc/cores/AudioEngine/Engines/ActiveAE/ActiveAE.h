@@ -328,7 +328,7 @@ protected:
   CActiveAEStream* CreateStream(MsgStreamNew *streamMsg);
   void DiscardStream(CActiveAEStream *stream);
   void SFlushStream(CActiveAEStream *stream);
-  void FlushEngine();
+  void FlushEngine(bool discardOutput = false);
   void ClearDiscardedBuffers();
   void SStopSound(CActiveAESound *sound);
   void DiscardSound(CActiveAESound *sound);
@@ -337,7 +337,7 @@ protected:
 
   bool RunStages();
   bool HasWork();
-  CSampleBuffer* SyncStream(CActiveAEStream *stream);
+  CSampleBuffer* SyncStream(CActiveAEStream* stream);
 
   void ResampleSounds();
   bool ResampleSound(CActiveAESound *sound);

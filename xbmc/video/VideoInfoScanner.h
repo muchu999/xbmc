@@ -31,27 +31,29 @@ class CFileItemList;
 
 namespace KODI::VIDEO
 {
-  class IVideoInfoTagLoader;
-  class ISetInfoTagLoader;
+class CFilenameAttributes;
+class IVideoInfoTagLoader;
+class ISetInfoTagLoader;
 
-  typedef struct SScanSettings
+typedef struct SScanSettings
+{
+  SScanSettings()
   {
-    SScanSettings()
-    {
-      parent_name = false;
-      parent_name_root = false;
-      noupdate = false;
-      exclude = false;
-      m_allExtAudio = false;
-      recurse = 1;
-    }
-    bool parent_name;       /* use the parent dirname as name of lookup */
-    bool parent_name_root;  /* use the name of directory where scan started as name for files in that dir */
-    int  recurse;           /* recurse into sub folders (indicate levels) */
-    bool noupdate;          /* exclude from update library function */
-    bool exclude;           /* exclude this path from scraping */
-    bool m_allExtAudio; /* treat all audio files in video directory as external tracks */
-  } SScanSettings;
+    parent_name = false;
+    parent_name_root = false;
+    noupdate = false;
+    exclude = false;
+    m_allExtAudio = false;
+    recurse = 1;
+  }
+  bool parent_name; /* use the parent dirname as name of lookup */
+  bool
+      parent_name_root; /* use the name of directory where scan started as name for files in that dir */
+  int recurse; /* recurse into sub folders (indicate levels) */
+  bool noupdate; /* exclude from update library function */
+  bool exclude; /* exclude this path from scraping */
+  bool m_allExtAudio; /* treat all audio files in video directory as external tracks */
+} SScanSettings;
 
   class CVideoInfoScanner : public CInfoScanner
   {
@@ -124,6 +126,19 @@ namespace KODI::VIDEO
                            bool fetchEpisodes = true,
                            CGUIDialogProgress* pDlgProgress = nullptr);
 
+    /*! \brief Look the videos up with these scrapers, as CVideoDatabase::GetScraperForPath()
+     cached them, so that the details already read with them are read from their cache.
+     */
+    void UseScrapers(const CVideoDatabase::ScraperCache& scrapers)
+    {
+      m_scraperCache.insert(scrapers.begin(), scrapers.end());
+    }
+
+    /*! \brief Look the movies or tv shows up by these ids with a python scraper, rather than search
+     for them.
+     */
+    void LookUpBy(const ADDON::CScraper::UniqueIDs& uniqueIDs) { m_uniqueIDs = uniqueIDs; }
+
     static bool DownloadFailed(CGUIDialogProgress* pDlgProgress);
 
     /*! \brief Update the set information from a SET.NFO in the Movie Set Information Folder
@@ -151,6 +166,22 @@ namespace KODI::VIDEO
                                  bool useLocal,
                                  CScraperUrl* pURL,
                                  CGUIDialogProgress* pDlgProgress);
+
+    /*!
+     * \brief Get a movie's identifier (ex. "{tmdb=603}") from its filename or, failing that, from
+     *        the name it is looked up by - its folder's name when folder names are used.
+     * \param[in] item The movie
+     * \param[in] bDirNames Whether the movie is looked up by its folder's name
+     * \param[in] filenameAttributes The attributes of the movie's filename
+     * \param[out] identifierType The identifier's type (ex. "tmdb")
+     * \param[out] identifier The identifier
+     * \return true if an identifier was found
+     */
+    bool GetMovieIdentifier(const CFileItem& item,
+                            bool bDirNames,
+                            const CFilenameAttributes& filenameAttributes,
+                            std::string& identifierType,
+                            std::string& identifier) const;
     InfoRet RetrieveInfoForMusicVideo(CFileItem* pItem,
                                       bool bDirNames,
                                       ADDON::ScraperPtr& scraper,
@@ -274,6 +305,8 @@ namespace KODI::VIDEO
      A disc rip or archive is not anchored in the folder that was scanned but under a
      bluray:// or zip:// path of its own. Those are queued too, otherwise the clean never
      looks at them and media removed with the disc stays in the library.
+     The video extras folders of the directory are queued too, as the scan adds their
+     extras without scanning them as directories of their own.
      \param directory the directory that was scanned
      */
     void AddPathToClean(const std::string& directory);
@@ -308,8 +341,10 @@ namespace KODI::VIDEO
     bool ProcessItemByVideoInfoTag(const CFileItem *item, EPISODELIST &episodeList);
 
     bool AddVideoExtras(CFileItemList& items, ADDON::ContentType content, const std::string& path);
-    static std::pair<VersionConversionResult, int> ProcessVideoVersion(
-        VideoDbContentType itemType, int dbId, int targetDbId = -1, bool canBecomeDefault = true);
+    std::pair<VersionConversionResult, int> ProcessVideoVersion(VideoDbContentType itemType,
+                                                                int dbId,
+                                                                int targetDbId = -1,
+                                                                bool canBecomeDefault = true);
     static void RemovePartNumberFromTitle(int dbId,
                                           VideoDbContentType itemType,
                                           CVideoDatabase& db);
@@ -335,8 +370,15 @@ namespace KODI::VIDEO
     bool m_scanAll;
     bool m_scanSubtree{false};
 
+    //! Lookups so far that failed, rather than finding nothing. A directory in which one failed
+    //! isn't hashed, so that the next scan tries it again.
+    unsigned int m_failedLookups{0};
+
     SimilarVideoScanAction m_similarVideoAction{SimilarVideoScanAction::NONE};
     bool m_ignoreVideoExtras{false};
+
+    //! The ids RetrieveVideoInfo() looks movies and tv shows up by, where it would otherwise search
+    ADDON::CScraper::UniqueIDs m_uniqueIDs;
 
     //! Whether the folder a movie is in names it (the scraper's "movies are in separate folders")
     bool m_useFolderNames{false};

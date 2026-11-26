@@ -224,11 +224,7 @@ bool CDVDDemuxFFmpeg::Aborted()
   if (m_timeout.IsTimePast())
     return true;
 
-  std::shared_ptr<CDVDInputStreamFFmpeg> input = std::dynamic_pointer_cast<CDVDInputStreamFFmpeg>(m_pInput);
-  if (input && input->Aborted())
-    return true;
-
-  return false;
+  return m_pInput && m_pInput->Aborted();
 }
 
 bool CDVDDemuxFFmpeg::IsStreaming() const
@@ -1081,6 +1077,8 @@ DemuxPacket* CDVDDemuxFFmpeg::ReadInternal(bool keep)
   // on some cases where the received packet is invalid we will need to return an empty packet (0 length) otherwise the main loop (in CVideoPlayer)
   // would consider this the end of stream and stop.
   bool bReturnEmpty = false;
+  // only a timed out read returns an empty packet without dropping input
+  bool timedOut = false;
   {
     std::unique_lock lock(m_critSection); // open lock scope
     if (m_pFormatContext)
@@ -1106,6 +1104,7 @@ DemuxPacket* CDVDDemuxFFmpeg::ReadInternal(bool keep)
       {
         // timeout, probably no real error, return empty packet
         bReturnEmpty = true;
+        timedOut = true;
       }
       else if (m_pkt.result == AVERROR_EOF)
       {
@@ -1243,7 +1242,10 @@ DemuxPacket* CDVDDemuxFFmpeg::ReadInternal(bool keep)
     }
   } // end of lock scope
   if (bReturnEmpty && !pPacket)
+  {
     pPacket = CDVDDemuxUtils::AllocateDemuxPacket(0);
+    pPacket->m_inputDropped = !timedOut;
+  }
 
   if (!pPacket)
     return nullptr;
@@ -1289,6 +1291,7 @@ DemuxPacket* CDVDDemuxFFmpeg::ReadInternal(bool keep)
     {
       CDVDDemuxUtils::FreeDemuxPacket(pPacket);
       pPacket = CDVDDemuxUtils::AllocateDemuxPacket(0);
+      pPacket->m_inputDropped = true;
       return pPacket;
     }
 

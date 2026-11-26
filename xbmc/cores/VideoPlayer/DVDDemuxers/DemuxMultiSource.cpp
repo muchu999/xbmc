@@ -42,14 +42,15 @@ void CDemuxMultiSource::Dispose()
 
 }
 
-void CDemuxMultiSource::EnableStream(int64_t demuxerId, int id, bool enable)
+bool CDemuxMultiSource::EnableStream(int64_t demuxerId, int id, bool enable)
 {
   auto iter = m_demuxerMap.find(demuxerId);
   if (iter != m_demuxerMap.end())
   {
     DemuxPtr demuxer = iter->second;
-    demuxer->EnableStream(demuxerId, id, enable);
+    return demuxer->EnableStream(demuxerId, id, enable);
   }
+  return false;
 }
 
 void CDemuxMultiSource::Flush()
@@ -130,6 +131,10 @@ bool CDemuxMultiSource::Open(const std::shared_ptr<CDVDInputStream>& pInput)
     DemuxPtr demuxer = DemuxPtr(CDVDFactoryDemuxer::CreateDemuxer((*iter)));
     if (!demuxer)
     {
+      // a stop fails the probe, and Abort() may be going through this list on another thread
+      if (m_pInput->Aborted())
+        return false;
+
       iter = m_pInput->m_InputStreams.erase(iter);
     }
     else

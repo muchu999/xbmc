@@ -18,6 +18,8 @@
 
 #include <memory>
 
+class CVideoReferenceClock;
+
 namespace KODI
 {
 namespace GAME
@@ -77,7 +79,6 @@ public:
   std::string CreateSavestate(bool autosave) override;
   bool UpdateSavestate(const std::string& savestatePath) override;
   bool LoadSavestate(const std::string& savestatePath) override;
-  void FreeSavestateResources(const std::string& savestatePath) override;
   void CloseOSDCallback() override;
 
   // Implementation of IPlaybackCallback
@@ -92,6 +93,26 @@ private:
   bool Open(const CFileItem& file, const CPlayerOptions& options);
 
   void SetSpeedInternal(double speed);
+
+  /*!
+   * \brief Refuse a speed that hardcore mode withholds
+   *
+   * Rewind and slow motion are withheld, fast forward and pausing are not.
+   * Answered before anything is told the speed changed, so the game, its
+   * sound and what is shown on screen stay in step.
+   *
+   * \return True if the speed was refused
+   */
+  bool RefuseSpeedInHardcore(double speed) const;
+
+  /*!
+   * \brief Return to normal speed if hardcore started during rewind or slow
+   *        motion
+   *
+   * Hardcore can be switched on by a route that doesn't pause the game first,
+   * such as JSON-RPC once the setting is shown.
+   */
+  void LeaveSpeedRefusedInHardcore();
 
   /*!
    * \brief Called when the speed changes
@@ -128,6 +149,7 @@ private:
   GAME::CGameServices& m_gameServices;
 
   // Subsystems
+  std::unique_ptr<CVideoReferenceClock> m_displayClock;
   std::unique_ptr<CRPProcessInfo> m_processInfo;
   std::unique_ptr<CGUIGameMessenger> m_guiMessenger;
   std::unique_ptr<CRPRenderManager> m_renderManager;

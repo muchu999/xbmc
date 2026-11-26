@@ -179,7 +179,16 @@ void CTCPServer::Process()
             }
 
             if (response.empty())
-              m_connections[i]->PushBuffer(this, buffer, nread);
+            {
+              // Don't hold the lock while a request runs. A method that waits on the
+              // main thread would block Announce, which holds the announcement lock
+              // the main thread may be waiting for. Only this thread removes
+              // connections, so the client stays valid.
+              CTCPClient* client = m_connections[i];
+              lock.unlock();
+              client->PushBuffer(this, buffer, nread);
+              lock.lock();
+            }
 
             close = m_connections[i]->Closing();
           }
@@ -556,16 +565,18 @@ int CTCPServer::CTCPClient::GetAnnouncementFlags()
 
 bool CTCPServer::CTCPClient::SetAnnouncementFlags(int flags)
 {
+  std::unique_lock lock(m_critSection);
   m_announcementflags = flags;
   return true;
 }
 
 void CTCPServer::CTCPClient::Send(const char *data, unsigned int size)
 {
+  // Announce can send from another thread, so a message goes out whole
+  std::unique_lock lock(m_critSection);
   unsigned int sent = 0;
   do
   {
-    std::unique_lock lock(m_critSection);
     sent += send(m_socket, data + sent, size - sent, 0);
   } while (sent < size);
 }
@@ -765,12 +776,14 @@ void CTCPServer::CWebSocketClient::Disconnect()
   {
     if (m_websocket->GetState() != WebSocketStateClosed && m_websocket->GetState() != WebSocketStateNotConnected)
     {
+      // Already framed, so it bypasses Send(), which would wrap it in a text frame
       const CWebSocketFrame *closeFrame = m_websocket->Close();
       if (closeFrame)
-        Send(closeFrame->GetFrameData(), (unsigned int)closeFrame->GetFrameLength());
+        CTCPClient::Send(closeFrame->GetFrameData(), (unsigned int)closeFrame->GetFrameLength());
     }
 
-    if (m_websocket->GetState() == WebSocketStateClosed)
-      CTCPClient::Disconnect();
+    // The caller drops this connection, so the descriptor goes with it even when the peer
+    // never answers the close frame
+    CTCPClient::Disconnect();
   }
 }

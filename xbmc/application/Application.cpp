@@ -589,12 +589,14 @@ bool CApplication::Initialize()
   CDatabaseManager &databaseManager = m_ServiceManager->GetDatabaseManager();
 
   bool allDatabasesInitialized{false};
-  CEvent event(true);
+  // Shared so the jobs below keep the event alive until CEvent::Set() returns: Set() still
+  // touches the event after waking the waiter, and Initialize() may return before that.
+  auto event = std::make_shared<CEvent>(true);
   CServiceBroker::GetJobManager()->Submit(
-      [&allDatabasesInitialized, &databaseManager, &event]()
+      [&allDatabasesInitialized, &databaseManager, event]()
       {
         allDatabasesInitialized = databaseManager.Initialize();
-        event.Set();
+        event->Set();
       });
 
   const std::string& connecting{
@@ -602,7 +604,7 @@ bool CApplication::Initialize()
   const std::string& updating{
       CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(24150)};
   int iDots = 1;
-  while (!event.Wait(1000ms))
+  while (!event->Wait(1000ms))
   {
     if (databaseManager.IsConnecting() || databaseManager.IsUpgrading())
     {
@@ -639,16 +641,18 @@ bool CApplication::Initialize()
 
   // Initialize GUI font manager to build/update fonts cache
   //! @todo Move GUIFontManager into service broker and drop the global reference
-  event.Reset();
+  event->Reset();
   GUIFontManager& guiFontManager = g_fontManager;
-  CServiceBroker::GetJobManager()->Submit([&guiFontManager, &event]() {
-    guiFontManager.Initialize();
-    event.Set();
-  });
+  CServiceBroker::GetJobManager()->Submit(
+      [&guiFontManager, event]()
+      {
+        guiFontManager.Initialize();
+        event->Set();
+      });
 
   std::string localizedStr{CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(39175)};
   iDots = 1;
-  while (!event.Wait(1000ms))
+  while (!event->Wait(1000ms))
   {
     if (g_fontManager.IsUpdating())
       CServiceBroker::GetRenderSystem()->ShowSplash(std::string(iDots, ' ') + localizedStr +
@@ -678,7 +682,7 @@ bool CApplication::Initialize()
     skinHandling->m_confirmSkinChange = false;
 
     std::vector<AddonInfoPtr> incompatibleAddons;
-    event.Reset();
+    event->Reset();
 
     // Addon migration
     if (CServiceBroker::GetAddonMgr().GetIncompatibleEnabledAddonInfos(incompatibleAddons))
@@ -686,17 +690,18 @@ bool CApplication::Initialize()
       if (CAddonSystemSettings::GetInstance().GetAddonAutoUpdateMode() == AUTO_UPDATES_ON)
       {
         CServiceBroker::GetJobManager()->Submit(
-            [&event, &incompatibleAddons]() {
+            [event, &incompatibleAddons]()
+            {
               if (CServiceBroker::GetRepositoryUpdater().CheckForUpdates())
                 CServiceBroker::GetRepositoryUpdater().Await();
 
               incompatibleAddons = CServiceBroker::GetAddonMgr().MigrateAddons();
-              event.Set();
+              event->Set();
             },
             CJob::PRIORITY_DEDICATED);
         localizedStr = CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(24151);
         iDots = 1;
-        while (!event.Wait(1000ms))
+        while (!event->Wait(1000ms))
         {
           CServiceBroker::GetRenderSystem()->ShowSplash(std::string(iDots, ' ') + localizedStr +
                                                         std::string(iDots, '.'));
@@ -843,7 +848,7 @@ namespace
 {
 // capture tap: serve pending requests from the finished frame before it is
 // presented.
-void ServiceCaptureTaps()
+void ServiceCaptureTaps(CApplicationPlayer& player)
 {
   using namespace KODI::RENDERING::CAPTURE;
 
@@ -880,6 +885,12 @@ void ServiceCaptureTaps()
   result.format = surface->GetFormat();
   result.color = GetOutputColorMetadata(*winSystem);
   result.content = CaptureContent::COMPOSITE; // this tap is the composite half
+
+  if (!player.CompositeVideoCapture(result))
+  {
+    captureService->Fail(request);
+    return;
+  }
 
   captureService->Complete(request, result);
 }
@@ -951,7 +962,7 @@ void CApplication::Render()
   // could be served, so FrameComplete would kill live requests.
   if (hasRendered)
   {
-    ServiceCaptureTaps();
+    ServiceCaptureTaps(*appPlayer);
     if (const auto captureService = CServiceBroker::GetCaptureService())
       captureService->FrameComplete();
   }
@@ -1554,10 +1565,8 @@ void CApplication::FrameMove(bool processEvents, bool processGUI)
       CGUIDialogKaiToast *toast = CServiceBroker::GetGUI()->GetWindowManager().GetWindow<CGUIDialogKaiToast>(WINDOW_DIALOG_KAI_TOAST);
       if (toast && toast->DoWork())
       {
-        if (!toast->IsDialogRunning())
-        {
-          toast->Open();
-        }
+        // also reopens the dialog if it is still running its close animation
+        toast->Open();
       }
     }
 
@@ -1572,7 +1581,8 @@ void CApplication::FrameMove(bool processEvents, bool processGUI)
 
     // Open the door for external calls e.g python exactly here.
     // Window size can be between 2 and 10ms and depends on number of continuous requests
-    if (m_WaitingExternalCalls)
+    // Stop() has already released the guard; don't take it back on the way out
+    if (m_WaitingExternalCalls && !m_bStop)
     {
       CSingleExit ex(CServiceBroker::GetWinSystem()->GetGfxContext());
       m_frameMoveGuard.unlock();
@@ -1901,6 +1911,8 @@ bool CApplication::Stop(int exitCode)
     m_ExitCode = exitCode;
     CLog::Log(LOGINFO, "Stopping all");
 
+    CScriptInvocationManager::GetInstance().NotifyAllScriptsAborting();
+
     // Stop scanning before the job manager is cancelled below
     // otherwise scans underway are not stopped
     CMusicLibraryQueue::GetInstance().CancelAllJobs();
@@ -1957,8 +1969,6 @@ bool CApplication::Stop(int exitCode)
   }
 
   cleanup_emu_environ();
-
-  KODI::TIME::Sleep(200ms);
 
   return success;
 }
@@ -2414,10 +2424,14 @@ void CApplication::Process()
 
   {
     // Allow processing of script threads to let them shut down properly.
+    // Stop() has already released the guard; don't take it back on the way out
+    const bool releaseGuard = !m_bStop;
     CSingleExit ex(CServiceBroker::GetWinSystem()->GetGfxContext());
-    m_frameMoveGuard.unlock();
+    if (releaseGuard)
+      m_frameMoveGuard.unlock();
     CScriptInvocationManager::GetInstance().Process();
-    m_frameMoveGuard.lock();
+    if (releaseGuard)
+      m_frameMoveGuard.lock();
   }
 
   // process messages, even if a movie is playing

@@ -17,6 +17,7 @@
 #include "games/GameServices.h"
 #include "games/GameSettings.h"
 #include "games/addons/GameClient.h"
+#include "games/addons/cheats/GameClientCheats.h"
 #include "games/dialogs/DialogGameDefines.h"
 #include "games/dialogs/osd/DialogGameIndicators.h"
 #include "games/dialogs/osd/LeaderboardUtils.h"
@@ -41,6 +42,7 @@ namespace
 // The add-on is not trusted to send sane counts. Published sets are an order
 // of magnitude below these.
 constexpr size_t MAX_ACHIEVEMENTS = 4096;
+constexpr size_t MAX_ACHIEVEMENT_SETS = 64;
 
 constexpr unsigned int TOAST_DISPLAY_TIME_MS = 6000;
 constexpr unsigned int TOAST_MESSAGE_TIME_MS = 500;
@@ -99,7 +101,45 @@ CGameClientCheevos::CGameClientCheevos(CGameClient& gameClient,
 {
 }
 
-CGameClientCheevos::~CGameClientCheevos() = default;
+CGameClientCheevos::~CGameClientCheevos()
+{
+  StopObservingSettings();
+}
+
+void CGameClientCheevos::Notify(const Observable& obs, const ObservableMessage msg)
+{
+  if (msg != ObservableMessageSettingsChanged)
+    return;
+
+  CGameSettings& gameSettings = CServiceBroker::GetGameServices().GameSettings();
+
+  // Only hardcore is applied as it changes. Encore is read as a game is
+  // identified, and SendCredentials() sends it with the next one, so the
+  // player is told it waits for that.
+  const bool encore = gameSettings.GetAchievementsEncore();
+  if (m_encoreSetting.exchange(encore) != encore)
+    CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Info, Localize(35303),
+                                          Localize(35719));
+
+  const bool hardcore = gameSettings.GetAchievementsHardcore();
+  if (m_hardcoreEnabled.exchange(hardcore) == hardcore)
+    return;
+
+  // Cheats come off before the client hears, so none survive into the reset
+  // that turning hardcore on asks for. Turning it off goes the other way: the
+  // client refuses cheats until it has heard.
+  if (hardcore)
+  {
+    m_gameClient.Cheats().SetHardcore(true);
+    if (!SetHardcoreEnabled(true))
+      DropHardcore();
+  }
+  else
+  {
+    SetHardcoreEnabled(false);
+    m_gameClient.Cheats().SetHardcore(false);
+  }
+}
 
 void CGameClientCheevos::OnGameLoaded(const game_rc_game_loaded& data)
 {
@@ -135,9 +175,7 @@ void CGameClientCheevos::OnGameLoaded(const game_rc_game_loaded& data)
     info.lockedBadgeUrl = SafeString(achievement.badge_locked_url);
     info.rarity = std::clamp(achievement.rarity, 0.0f, 100.0f);
     info.points = achievement.points;
-    info.earned = achievement.unlock_state != GAME_RC_UNLOCK_STATE_LOCKED;
-    if (info.earned)
-      info.unlockedDate = UnlockTime(achievement.unlock_time);
+    SetEarned(info, achievement, m_encoreModeEnabled);
 
     if (info.earned)
       ++achievementState.unlockedAchievements;
@@ -165,29 +203,68 @@ void CGameClientCheevos::OnGameLoaded(const game_rc_game_loaded& data)
 
   NotifyDialogs();
 
+  m_startupToast.reset();
   if (achievementState.totalAchievements == 0)
     return;
 
-  // "{0:d} of {1:d} achievements unlocked"
-  const std::string description = StringUtils::Format(
-      Localize(35284), achievementState.unlockedAchievements, achievementState.totalAchievements);
-
   // Kodi's texture cache resolves remote URLs; an empty path falls back to
   // the default icon
-  CGUIDialogKaiToast::QueueNotification(
-      SafeString(data.icon_url), !gameTitle.empty() ? gameTitle : Localize(35264), description,
-      TOAST_DISPLAY_TIME_MS, false, TOAST_MESSAGE_TIME_MS);
+  m_startupToast =
+      StartupToast{SafeString(data.icon_url), !gameTitle.empty() ? gameTitle : Localize(35264)};
+
+  // A set the player turned off is turned off again once the client reports
+  // its sets, which takes it out of the totals
+  if (!CServiceBroker::GetGameServices().GameSettings().HasDisabledAchievementSets() ||
+      !ReportsAchievementSets())
+    QueueStartupToast();
+}
+
+void CGameClientCheevos::SetEarned(AchievementInfo& info,
+                                   const game_rc_achievement& achievement,
+                                   bool encoreModeEnabled)
+{
+  if (achievement.unlock_state == GAME_RC_UNLOCK_STATE_LOCKED)
+    return;
+
+  if (encoreModeEnabled)
+  {
+    info.previouslyUnlockedDate = UnlockTime(achievement.unlock_time);
+    return;
+  }
+
+  info.earned = true;
+  info.unlockedDate = UnlockTime(achievement.unlock_time);
+}
+
+void CGameClientCheevos::QueueStartupToast()
+{
+  if (!m_startupToast)
+    return;
+
+  const AchievementState state = CServiceBroker::GetGameServices().AchievementRuntime().GetState();
+
+  // RetroAchievements asks for the mode to be shown as a game starts. The
+  // setting is the mode in force by now: resuming a save state has already
+  // dropped it to casual.
+  //
+  // "Hardcore mode: {0:d} of {1:d} achievements unlocked" or
+  // "{0:d} of {1:d} achievements unlocked"
+  const bool hardcore = CServiceBroker::GetGameServices().GameSettings().GetAchievementsHardcore();
+  const std::string description = StringUtils::Format(
+      Localize(hardcore ? 35703 : 35284), state.unlockedAchievements, state.totalAchievements);
+
+  CGUIDialogKaiToast::QueueNotification(m_startupToast->icon, m_startupToast->title, description,
+                                        TOAST_DISPLAY_TIME_MS, false, TOAST_MESSAGE_TIME_MS);
+  m_startupToast.reset();
 }
 
 void CGameClientCheevos::OnAchievementTriggered(const game_rc_achievement_triggered& data)
 {
-  OnAchievementTriggered(data, CServiceBroker::GetGameServices().AchievementRuntime(),
-                         m_encoreModeEnabled);
+  OnAchievementTriggered(data, CServiceBroker::GetGameServices().AchievementRuntime());
 }
 
 void CGameClientCheevos::OnAchievementTriggered(const game_rc_achievement_triggered& data,
-                                                CAchievementRuntime& runtime,
-                                                bool encoreModeEnabled)
+                                                CAchievementRuntime& runtime)
 {
   const std::string title = SafeString(data.title);
 
@@ -197,15 +274,7 @@ void CGameClientCheevos::OnAchievementTriggered(const game_rc_achievement_trigge
 
   bool newlyEarned = false;
   const AchievementState state = runtime.MarkEarned(data.id, unlockedDate, newlyEarned);
-
-  // Encore re-arms achievements already earned, so a re-trigger is announced
-  // even though the runtime has nothing left to change
-  const bool encoreTrigger = encoreModeEnabled && state.loaded &&
-                             std::any_of(state.achievements.begin(), state.achievements.end(),
-                                         [&data](const AchievementInfo& achievement)
-                                         { return achievement.id == data.id; });
-
-  if (!newlyEarned && !encoreTrigger)
+  if (!newlyEarned)
   {
     CLog::Log(LOGDEBUG, "CGameClientCheevos: achievement {} \"{}\" was already earned", data.id,
               title);
@@ -215,14 +284,121 @@ void CGameClientCheevos::OnAchievementTriggered(const game_rc_achievement_trigge
   CLog::Log(LOGINFO, "CGameClientCheevos: earned achievement {} \"{}\" ({} points){}", data.id,
             title, data.points, data.hardcore ? " in hardcore mode" : "");
 
-  // Nothing changed for an encore re-trigger, so there is nothing to redraw
-  if (newlyEarned)
-    NotifyDialogs();
+  NotifyDialogs();
 
   // "Achievement Unlocked" - the one notification that plays a sound
   CGUIDialogKaiToast::QueueNotification(SafeString(data.badge_url), Localize(35281),
                                         !title.empty() ? title : SafeString(data.description),
                                         TOAST_DISPLAY_TIME_MS, true, TOAST_MESSAGE_TIME_MS);
+
+  // Beaten by this unlock: the last progression achievement, or the first win
+  // once there are none left to earn
+  const auto achievement = std::ranges::find(state.achievements, data.id, &AchievementInfo::id);
+  if (achievement == state.achievements.end())
+    return;
+
+  const BeatenProgress beaten = state.GetBeatenProgress(achievement->setId);
+  const bool newlyBeaten =
+      beaten.IsBeaten() && (achievement->type == AchievementType::PROGRESSION ||
+                            (achievement->type == AchievementType::WIN && beaten.winEarned == 1));
+  if (!newlyBeaten)
+    return;
+
+  const auto set = std::ranges::find(state.sets, achievement->setId, &AchievementSet::id);
+  const std::string setTitle =
+      set != state.sets.end() && !set->title.empty() ? set->title : state.gameTitle;
+
+  CLog::Log(LOGINFO, "CGameClientCheevos: beaten \"{}\"", setTitle);
+
+  // "Beaten"
+  CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Info, Localize(35712), setTitle,
+                                        TOAST_DISPLAY_TIME_MS, false, TOAST_MESSAGE_TIME_MS);
+}
+
+void CGameClientCheevos::OnAchievementSets(const game_rc_achievement_sets& data)
+{
+  const CGameSettings& gameSettings = CServiceBroker::GetGameServices().GameSettings();
+
+  std::vector<AchievementSet> sets;
+  const size_t setCount = data.sets != nullptr
+                              ? std::min(static_cast<size_t>(data.set_count), MAX_ACHIEVEMENT_SETS)
+                              : 0;
+  sets.reserve(setCount);
+  for (size_t i = 0; i < setCount; ++i)
+  {
+    AchievementSet set;
+    set.id = data.sets[i].id;
+    set.title = SafeString(data.sets[i].title);
+    set.badgeUrl = SafeString(data.sets[i].badge_url);
+
+    // A set the player turned off stays off, if the client will turn it off
+    // again. The game's own set comes first and is never off.
+    if (i > 0 && gameSettings.IsAchievementSetDisabled(set.id) &&
+        SetAchievementSetEnabled(set.id, false))
+      set.enabled = false;
+
+    sets.emplace_back(std::move(set));
+  }
+
+  std::vector<AchievementDetails> details;
+  const size_t detailCount =
+      data.achievements != nullptr
+          ? std::min(static_cast<size_t>(data.achievement_count), MAX_ACHIEVEMENTS)
+          : 0;
+  details.reserve(detailCount);
+  for (size_t i = 0; i < detailCount; ++i)
+  {
+    const game_rc_achievement_details& entry = data.achievements[i];
+
+    AchievementType type = AchievementType::STANDARD;
+    switch (entry.type)
+    {
+      case GAME_RC_ACHIEVEMENT_TYPE_MISSABLE:
+        type = AchievementType::MISSABLE;
+        break;
+      case GAME_RC_ACHIEVEMENT_TYPE_PROGRESSION:
+        type = AchievementType::PROGRESSION;
+        break;
+      case GAME_RC_ACHIEVEMENT_TYPE_WIN:
+        type = AchievementType::WIN;
+        break;
+      default:
+        break;
+    }
+
+    details.push_back({entry.achievement_id, entry.set_id, type});
+  }
+
+  CLog::Log(LOGINFO, "CGameClientCheevos: game has {} achievement set(s)", sets.size());
+
+  CAchievementRuntime& runtime = CServiceBroker::GetGameServices().AchievementRuntime();
+  runtime.SetAchievementSets(sets, details);
+  runtime.SetAchievementSetHandler([this](unsigned int setId, bool enabled)
+                                   { return OnAchievementSetToggled(setId, enabled); });
+
+  NotifyDialogs();
+  QueueStartupToast();
+}
+
+bool CGameClientCheevos::OnAchievementSetToggled(unsigned int setId, bool enabled)
+{
+  CAchievementRuntime& runtime = CServiceBroker::GetGameServices().AchievementRuntime();
+
+  const AchievementState state = runtime.GetState();
+  if (state.sets.empty() || state.sets.front().id == setId)
+    return false;
+
+  if (!SetAchievementSetEnabled(setId, enabled))
+    return false;
+
+  runtime.SetAchievementSetEnabled(setId, enabled);
+  CServiceBroker::GetGameServices().GameSettings().SetAchievementSetDisabled(setId, !enabled);
+
+  CLog::Log(LOGINFO, "CGameClientCheevos: turned achievement set {} {}", setId,
+            enabled ? "on" : "off");
+
+  NotifyDialogs();
+  return true;
 }
 
 void CGameClientCheevos::OnGameCompleted(const std::string& title, bool hardcore)
@@ -341,6 +517,8 @@ void CGameClientCheevos::OnGameClosed()
 {
   m_encoreModeEnabled = false;
 
+  CServiceBroker::GetGameServices().AchievementRuntime().SetAchievementSetHandler(nullptr);
+
   CServiceBroker::GetGameServices().AchievementRuntime().Clear();
 
   NotifyDialogs();
@@ -352,6 +530,10 @@ bool CGameClientCheevos::SendCredentials()
   m_encoreModeEnabled = false;
 
   CGameSettings& gameSettings = CServiceBroker::GetGameServices().GameSettings();
+
+  // Recorded whether or not anyone is signed in: the cheats go by the same
+  // setting as the game loads, and a later change is judged against this
+  m_hardcoreEnabled = gameSettings.GetAchievementsHardcore();
 
   const std::string username = gameSettings.GetRAUsername();
   const std::string token = gameSettings.GetRAToken();
@@ -365,8 +547,12 @@ bool CGameClientCheevos::SendCredentials()
   if (username.empty() || token.empty())
     return SetRetroAchievementsCredentials("", "");
 
-  // Encore goes with them: the client reads it as it identifies the game, and
-  // only a client that accepted it will re-arm anything
+  // The modes go with them: the client has to agree with Kodi about which is in
+  // force before it identifies the game. Only a client that accepted encore
+  // will re-arm anything.
+  if (!SetHardcoreEnabled(m_hardcoreEnabled) && m_hardcoreEnabled)
+    DropHardcore();
+
   const bool encoreModeEnabled = gameSettings.GetAchievementsEncore();
   m_encoreModeEnabled = SetEncoreModeEnabled(encoreModeEnabled) && encoreModeEnabled;
 
@@ -531,6 +717,70 @@ bool CGameClientCheevos::SetRetroAchievementsCredentials(const std::string& user
   return false;
 }
 
+bool CGameClientCheevos::SetHardcoreEnabled(bool enabled)
+{
+  // The lock does more here than serialise the call. Switching hardcore on
+  // makes the client ask for a reset before this returns, and the game loop
+  // holds this same lock for the whole of a frame, so the reset cannot land
+  // while the emulator is running one.
+  std::unique_lock lock(m_clientAccess);
+
+  try
+  {
+    return m_gameClient.LogError(m_struct.toAddon->RCSetHardcoreEnabled(&m_struct, enabled),
+                                 "RCSetHardcoreEnabled()");
+  }
+  catch (...)
+  {
+    m_gameClient.LogException("RCSetHardcoreEnabled()");
+  }
+
+  return false;
+}
+
+void CGameClientCheevos::DropHardcore()
+{
+  CLog::Log(LOGINFO, "GAME: {} refused hardcore mode, turning it off", m_gameClient.ID());
+
+  m_hardcoreEnabled = false;
+  m_gameClient.Cheats().SetHardcore(false);
+  CServiceBroker::GetGameServices().GameSettings().SetAchievementsHardcore(false);
+
+  // "Hardcore mode turned off. Achievements will be earned in casual mode."
+  CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Info, m_gameClient.Name(),
+                                        Localize(35306));
+}
+
+bool CGameClientCheevos::ReportsAchievementSets() const
+{
+  std::unique_lock lock(m_clientAccess);
+
+  // Left unset by a client older than game API 8.5.0
+  return m_struct.toAddon->RCSetAchievementSetEnabled != nullptr;
+}
+
+bool CGameClientCheevos::SetAchievementSetEnabled(unsigned int setId, bool enabled)
+{
+  std::unique_lock lock(m_clientAccess);
+
+  // Left unset by a client older than game API 8.5.0
+  if (m_struct.toAddon->RCSetAchievementSetEnabled == nullptr)
+    return false;
+
+  try
+  {
+    return m_gameClient.LogError(
+        m_struct.toAddon->RCSetAchievementSetEnabled(&m_struct, setId, enabled),
+        "RCSetAchievementSetEnabled()");
+  }
+  catch (...)
+  {
+    m_gameClient.LogException("RCSetAchievementSetEnabled()");
+  }
+
+  return false;
+}
+
 bool CGameClientCheevos::SetEncoreModeEnabled(bool enabled)
 {
   std::unique_lock lock(m_clientAccess);
@@ -546,4 +796,28 @@ bool CGameClientCheevos::SetEncoreModeEnabled(bool enabled)
   }
 
   return false;
+}
+
+void CGameClientCheevos::ObserveSettings()
+{
+  if (m_observingSettings)
+    return;
+
+  m_encoreSetting = CServiceBroker::GetGameServices().GameSettings().GetAchievementsEncore();
+  CServiceBroker::GetGameServices().GameSettings().RegisterObserver(this);
+  m_observingSettings = true;
+}
+
+void CGameClientCheevos::StopObservingSettings()
+{
+  if (!m_observingSettings)
+    return;
+
+  // The game client can outlive the services when Kodi is shutting down
+  //! @todo Have the game services invalidate game clients as they are torn
+  //! down, so this check isn't needed
+  if (CServiceBroker::IsServiceManagerUp())
+    CServiceBroker::GetGameServices().GameSettings().UnregisterObserver(this);
+
+  m_observingSettings = false;
 }

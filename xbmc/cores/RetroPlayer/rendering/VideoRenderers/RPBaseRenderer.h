@@ -51,6 +51,7 @@ public:
   bool Configure(AVPixelFormat format);
   void FrameMove();
   void SetBuffer(IRenderBuffer* buffer);
+  void SetSpeed(double speed);
   void RenderFrame(bool clear, uint8_t alpha);
 
   // Feature support
@@ -69,16 +70,32 @@ public:
   void SetStretchMode(STRETCHMODE stretchMode);
   void SetRenderRotation(unsigned int rotationDegCCW);
   void SetShaderPreset(const std::string& presetPath);
-  void SetPixels(const std::string& pixelPath);
 
   // Rendering properties
   bool IsVisible() const;
   IRenderBuffer* GetRenderBuffer() const;
 
+  /*!
+   * \brief Record that the renderer was asked for in the current frame
+   */
+  void SetUsed();
+
+  /*!
+   * \brief Check if the renderer wasn't asked for in the last frame, so its
+   * textures can be released
+   */
+  bool IsUnused() const;
+
+  /*!
+   * \brief Release the frame and textures of a renderer that isn't being drawn,
+   * keeping its compiled shaders for when it's drawn again
+   */
+  void ReleaseTextures();
+
 protected:
   // Protected renderer interface
   virtual bool ConfigureInternal() { return true; }
-  virtual void RenderInternal(bool clear, uint8_t alpha) = 0;
+  virtual void RenderInternal(uint8_t alpha) = 0;
   virtual void FlushInternal() {}
 
   // Construction parameters
@@ -108,11 +125,6 @@ protected:
   bool m_bShadersNeedUpdate = true;
   bool m_bUseShaderPreset = false;
 
-  // Last reported geometry, so the log carries changes rather than every frame
-  CRect m_lastLoggedDestRect;
-  CRect m_lastLoggedFullDestRect;
-  STRETCHMODE m_lastLoggedStretchMode{static_cast<STRETCHMODE>(-1)};
-
 private:
   /*!
    * \brief Calculate driven dimensions
@@ -136,6 +148,8 @@ private:
 
   uint64_t m_renderFrameCount = 0;
   uint64_t m_lastRender = 0;
+  uint64_t m_lastUse = 0;
+  bool m_texturesReleased = false;
 };
 } // namespace RETRO
 } // namespace KODI

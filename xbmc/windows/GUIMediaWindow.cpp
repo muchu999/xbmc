@@ -34,6 +34,7 @@
 #include "dialogs/GUIDialogMediaFilter.h"
 #include "dialogs/GUIDialogProgress.h"
 #include "dialogs/GUIDialogSmartPlaylistEditor.h"
+#include "filesystem/Directory.h"
 #include "filesystem/FileDirectoryFactory.h"
 #include "filesystem/MultiPathDirectory.h"
 #include "filesystem/PluginDirectory.h"
@@ -307,12 +308,19 @@ bool CGUIMediaWindow::OnMessage(CGUIMessage& message)
       if (message.GetParam1() == GUI_MSG_WINDOW_RESET)
       {
         m_vecItems->SetPath("?");
+        m_libraryFilterNodePath.clear();
+        m_libraryFilterDbPath.clear();
         return true;
       }
       else if ( message.GetParam1() == GUI_MSG_REFRESH_THUMBS )
       {
+        // an item sent along limits the refresh to the list items showing it
+        const auto item{std::static_pointer_cast<CFileItem>(message.GetItem())};
         for (int i = 0; i < m_vecItems->Size(); i++)
-          m_vecItems->Get(i)->FreeMemory(true);
+        {
+          if (!item || m_vecItems->Get(i)->IsSamePath(item.get()))
+            m_vecItems->Get(i)->FreeMemory(true);
+        }
         break;  // the window will take care of any info images
       }
       else if (message.GetParam1() == GUI_MSG_REMOVED_MEDIA)
@@ -386,7 +394,8 @@ bool CGUIMediaWindow::OnMessage(CGUIMessage& message)
 
         if (IsActive() || (flag & GUI_MSG_FLAG_FORCE_UPDATE))
         {
-          m_vecItems->UpdateItem(newItem.get());
+          const bool replaceLabels = !(flag & GUI_MSG_FLAG_KEEP_CURRENT_LABELS);
+          m_vecItems->UpdateItem(newItem.get(), replaceLabels);
 
           if (flag & GUI_MSG_FLAG_UPDATE_LIST)
           { // need the list updated as well
@@ -527,6 +536,8 @@ bool CGUIMediaWindow::OnMessage(CGUIMessage& message)
         }
         if (resetHistory)
         {
+          m_libraryFilterNodePath.clear();
+          m_libraryFilterDbPath.clear();
           m_vecItems->RemoveDiscCache(GetID());
           // only compute the history for the provided path if "return" is not defined
           // (otherwise the root level for the path will be added by default to the path history
@@ -751,11 +762,40 @@ bool CGUIMediaWindow::GetDirectory(const std::string &strDirectory, CFileItemLis
       SetupShares();
 
     CFileItemList dirItems;
-    if (!GetDirectoryItems(pathToUrl, dirItems, UseFileDirectories()))
+    CFileItemList nodeItems;
+    bool viaNode{false};
+    if (!m_libraryFilterDbPath.empty() && strDirectory == m_libraryFilterDbPath)
+    {
+      CURL nodeUrl{m_libraryFilterNodePath};
+      viaNode = GetDirectoryItems(nodeUrl, nodeItems, UseFileDirectories());
+      if (viaNode)
+      {
+        if (nodeItems.GetPath() != m_libraryFilterDbPath)
+        {
+          // Refresh() keeps the filter path, so move it to the new node query
+          CURL filterPathUrl{nodeItems.GetPath()};
+          if (const CURL oldFilterPathUrl{m_strFilterPath}; oldFilterPathUrl.HasOption("filter"))
+            filterPathUrl.SetOption("filter", oldFilterPathUrl.GetOption("filter"));
+          m_strFilterPath = filterPathUrl.Get();
+        }
+        m_libraryFilterDbPath = nodeItems.GetPath();
+      }
+      else if (XFILE::CDirectory::Exists(m_libraryFilterNodePath, false))
+      {
+        // still there, so cancelled or hidden: don't load the db path in its place
+        return false;
+      }
+      else
+      {
+        m_libraryFilterNodePath.clear();
+        m_libraryFilterDbPath.clear();
+      }
+    }
+    if (!viaNode && !GetDirectoryItems(pathToUrl, dirItems, UseFileDirectories()))
       return false;
 
     // assign fetched directory items
-    items.Assign(dirItems);
+    items.Assign(viaNode ? nodeItems : dirItems);
 
     // took over a second, and not normally cached, so cache it
     auto end = std::chrono::steady_clock::now();
@@ -860,6 +900,14 @@ bool CGUIMediaWindow::Update(const std::string &strDirectory, bool updateFilterP
     // Return false to be able to eg. show
     // an error message.
     return false;
+  }
+
+  if (URIUtils::IsLibraryFolder(pathNoFilter) &&
+      m_vecItems->GetProperty("library.filter").asBoolean() &&
+      m_vecItems->GetPath() != pathNoFilter)
+  {
+    m_libraryFilterNodePath = pathNoFilter;
+    m_libraryFilterDbPath = m_vecItems->GetPath();
   }
 
   if (m_vecItems->GetLabel().empty())
@@ -1551,10 +1599,15 @@ bool CGUIMediaWindow::OnPlayAndQueueMedia(const CFileItemPtr& item, const std::s
              { return i->IsZIP() || i->IsRAR() || i->IsFolder(); });
 
     // Chosen item
-    int mediaToPlay =
-        std::distance(playlist.begin(), std::find_if(playlist.begin(), playlist.end(),
-                                                     [&item](const std::shared_ptr<CFileItem>& i)
-                                                     { return i->GetPath() == item->GetPath(); }));
+    int mediaToPlay = std::distance(
+        playlist.begin(), std::find_if(playlist.begin(), playlist.end(),
+                                       [&item](const std::shared_ptr<CFileItem>& i)
+                                       {
+                                         // cue sheet tracks share one path: compare the start
+                                         // offset too, otherwise the first track always plays
+                                         return i->GetPath() == item->GetPath() &&
+                                                i->GetStartOffset() == item->GetStartOffset();
+                                       }));
     /* For .mka albums, all tracks are in the same file so using path as above will always play the
      * first track.  Use the track and disk number to ensure we start playback on the correct track.
      * This only applies to mka or m4b items played back via files view. Music library takes

@@ -10,6 +10,7 @@
 
 #include "FileItem.h"
 #include "GameClientCallbacks.h"
+#include "GameClientFastForward.h"
 #include "GameClientInGameSaves.h"
 #include "GameClientProperties.h"
 #include "GameClientTranslator.h"
@@ -125,7 +126,8 @@ std::string NormalizeExtension(const std::string& strExtension)
 CGameClient::CGameClient(const ADDON::AddonInfoPtr& addonInfo)
   : CAddonDll(addonInfo, ADDON::AddonType::GAMEDLL),
     m_subsystems(CGameClientSubsystem::CreateSubsystems(*this, *m_ifc.game, m_critSection)),
-    m_bIsPlaying(false)
+    m_bIsPlaying(false),
+    m_fastForward(std::make_unique<CGameClientFastForward>())
 {
   using namespace ADDON;
 
@@ -207,19 +209,15 @@ bool CGameClient::Initialize(void)
   if (!CDirectory::Exists(Profile()))
     CDirectory::Create(Profile());
 
-  // Ensure directory exists for savestates
-  const CGameServices& gameServices = CServiceBroker::GetGameServices();
-  std::string savestatesDir = URIUtils::AddFileToFolder(gameServices.GetSavestatesFolder(), ID());
-  if (!CDirectory::Exists(savestatesDir))
-    CDirectory::Create(savestatesDir);
-
   if (!AddonProperties().InitializeProperties())
     return false;
 
   m_ifc.game->toKodi->kodiInstance = this;
   m_ifc.game->toKodi->EnableHardwareRendering = cb_enable_hardware_rendering;
   m_ifc.game->toKodi->CloseGame = cb_close_game;
+  m_ifc.game->toKodi->ReportMissingFile = cb_report_missing_file;
   m_ifc.game->toKodi->GetPlaybackSpeed = cb_get_playback_speed;
+  m_ifc.game->toKodi->SetFastForwarding = cb_set_fast_forwarding;
   m_ifc.game->toKodi->SetGameTiming = cb_set_game_timing;
   m_ifc.game->toKodi->OpenStream = cb_open_stream;
   m_ifc.game->toKodi->StartStream = cb_start_stream;
@@ -250,12 +248,14 @@ bool CGameClient::Initialize(void)
   m_ifc.game->toKodi->RCOnLeaderboardScoreboard = cb_rc_on_leaderboard_scoreboard;
   m_ifc.game->toKodi->RCOnReset = cb_rc_on_reset;
   m_ifc.game->toKodi->RCOnSubsetCompleted = cb_rc_on_subset_completed;
+  m_ifc.game->toKodi->RCOnAchievementSets = cb_rc_on_achievement_sets;
 
   memset(m_ifc.game->toAddon, 0, sizeof(KodiToAddonFuncTable_Game));
 
   if (CreateInstance(&m_ifc) == ADDON_STATUS_OK)
   {
     Input().Initialize();
+    Cheevos().ObserveSettings();
     LogAddonProperties();
     return true;
   }
@@ -267,6 +267,7 @@ bool CGameClient::Initialize(void)
 
 void CGameClient::Unload()
 {
+  Cheevos().StopObservingSettings();
   CloseFile();
   Streams().Deinitialize();
   Input().Deinitialize();
@@ -327,6 +328,8 @@ bool CGameClient::OpenFile(const CFileItem& file,
 
   const auto loadGame = [this, &path]()
   {
+    m_missingFile.clear();
+
     GAME_ERROR loadError = GAME_ERROR_FAILED;
     try
     {
@@ -347,16 +350,6 @@ bool CGameClient::OpenFile(const CFileItem& file,
   };
 
   error = loadGame();
-
-  if (error != GAME_ERROR_NO_ERROR && SupportsDiscControl() && Discs().HasPersistedState())
-  {
-    CLog::Log(LOGWARNING,
-              "GameClient: Load with persisted disc hint failed; retrying original source media");
-    Streams().Deinitialize();
-    Streams().Initialize(streamManager);
-    Discs().Initialize(path, false);
-    error = loadGame();
-  }
 
   if (error != GAME_ERROR_NO_ERROR)
   {
@@ -438,52 +431,23 @@ bool CGameClient::InitializeGameplay(const std::string& gamePath,
                                      RETRO::IStreamManager& streamManager,
                                      IGameInputCallback* input)
 {
-  bool gameInfoLoaded = LoadGameInfo();
-  if (SupportsDiscControl() && Discs().HasPersistedState() &&
-      (!gameInfoLoaded || !Discs().RestoreDiscList()))
-  {
-    CLog::Log(
-        LOGWARNING,
-        "GameClient: Startup with persisted disc state failed; reloading original source media");
-    if (!UnloadGame() || gamePath.empty())
-      return false;
-
-    Streams().Deinitialize();
-    Streams().Initialize(streamManager);
-    Discs().Initialize(gamePath, false);
-    GAME_ERROR error = GAME_ERROR_FAILED;
-    try
-    {
-      CClientFrameScope hwScope(Streams());
-      if (hwScope.IsBound())
-        LogError(error = m_ifc.game->toAddon->LoadGame(m_ifc.game, gamePath.c_str()), "LoadGame()");
-    }
-    catch (...)
-    {
-      LogException("LoadGame()");
-    }
-    if (error != GAME_ERROR_NO_ERROR)
-      return false;
-    gameInfoLoaded = LoadGameInfo();
-  }
-
+  const bool gameInfoLoaded = LoadGameInfo();
   if (!gameInfoLoaded)
   {
     UnloadGame();
     return false;
   }
   if (SupportsDiscControl())
-    Discs().RefreshDiscStateLive();
+    Discs().RefreshDiscState();
 
   Input().Start(input);
 
   m_bIsPlaying = true;
   m_hasFrameRun = false;
+  m_framesRun = 0;
+  m_noSerializeSize = false;
   m_gamePath = gamePath;
   m_input = input;
-
-  if (SupportsDiscControl())
-    Discs().SaveDiscState();
 
   m_inGameSaves = std::make_unique<CGameClientInGameSaves>(this, m_ifc.game);
   m_inGameSaves->Load();
@@ -583,7 +547,7 @@ void CGameClient::NotifyError(GAME_ERROR error)
     const std::string& wanted = Streams().HardwareRenderingRefusedWanted();
     const std::string& available = Streams().HardwareRenderingRefusedAvailable();
 
-    if (!wanted.empty() && !available.empty())
+    if (!available.empty())
     {
       // Failed to play game
       MESSAGING::HELPERS::ShowOKDialogText(
@@ -592,19 +556,13 @@ void CGameClient::NotifyError(GAME_ERROR error)
               CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(35300), wanted,
               available)});
     }
-    else if (!wanted.empty())
+    else
     {
       // Failed to play game
       MESSAGING::HELPERS::ShowOKDialogText(
           CVariant{35210},
           CVariant{StringUtils::Format(
               CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(35301), wanted)});
-    }
-    else
-    {
-      // Failed to play game
-      // This game requires OpenGL support for 3D rendering. OpenGL support is still under development.
-      MESSAGING::HELPERS::ShowOKDialogText(CVariant{35210}, CVariant{35271});
     }
   }
   else if (!missingResource.empty())
@@ -616,6 +574,18 @@ void CGameClient::NotifyError(GAME_ERROR error)
         CVariant{StringUtils::Format(
             CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(35211),
             missingResource)});
+  }
+  else if (error == GAME_ERROR_MISSING_FILES)
+  {
+    const auto& strings = CServiceBroker::GetResourcesComponent().GetLocalizeStrings();
+    // Failed to play game
+    // The emulator "%s" couldn't find %s, a file it needs.
+    // The emulator "%s" couldn't find files it needs, such as BIOS files.
+    MESSAGING::HELPERS::ShowOKDialogText(
+        CVariant{35210},
+        CVariant{m_missingFile.empty()
+                     ? StringUtils::Format(strings.Get(35241), Name())
+                     : StringUtils::Format(strings.Get(35240), Name(), m_missingFile)});
   }
   else
   {
@@ -681,6 +651,8 @@ void CGameClient::CloseFile()
 {
   std::unique_lock lock(m_critSection);
 
+  m_missingFile.clear();
+
   if (m_bIsPlaying)
   {
     // While the client is still up, so the cheats can be switched off on it
@@ -691,9 +663,12 @@ void CGameClient::CloseFile()
 
     m_bIsPlaying = false;
     m_hasFrameRun = false;
+    m_framesRun = 0;
     m_gamePath.clear();
     m_serializeSize = 0;
+    m_noSerializeSize = false;
     m_input = nullptr;
+    m_fastForward->Reset();
 
     Input().Stop();
 
@@ -762,6 +737,8 @@ void CGameClient::RunFrame(bool pollInput)
             !LogError(m_ifc.game->toAddon->RunFrame(m_ifc.game), "RunFrame()"))
           return;
         m_hasFrameRun = true;
+        if (m_framesRun < SAVESTATE_SIZE_FRAMES)
+          ++m_framesRun;
 
         // A client using the asynchronous audio interface produces no audio of
         // its own accord: it waits to be asked, once per frame, and writes what
@@ -797,6 +774,7 @@ size_t CGameClient::GetSerializeSize(SerializeSizeMode mode) const
         return 0;
 
       m_serializeSize = m_ifc.game->toAddon->SerializeSize(m_ifc.game);
+      m_noSerializeSize = m_serializeSize == 0 && m_framesRun >= SAVESTATE_SIZE_FRAMES;
 
       if (m_serializeSize > 0)
         CLog::Log(LOGINFO, "GAME: Savestate size: {}", m_serializeSize);
@@ -914,12 +892,7 @@ RestoreResult CGameClient::Deserialize(const uint8_t* data,
   if (bSuccess && SupportsDiscControl())
   {
     bSuccess = Discs().RestoreDiscList();
-    if (discState)
-    {
-      if (bSuccess && previousDiscs)
-        Discs().SaveDiscState();
-    }
-    else if (bSuccess)
+    if (bSuccess && !discState)
       Discs().RefreshDiscState();
   }
 
@@ -1086,13 +1059,36 @@ void CGameClient::cb_close_game(KODI_HANDLE kodiInstance)
                                              static_cast<void*>(new CAction(ACTION_STOP)));
 }
 
+void CGameClient::cb_report_missing_file(KODI_HANDLE kodiInstance, const char* path)
+{
+  CGameClient* gameClient = static_cast<CGameClient*>(kodiInstance);
+  if (gameClient == nullptr || path == nullptr)
+    return;
+
+  CLog::Log(LOGWARNING, "GameClient: {} couldn't find {}", gameClient->ID(), path);
+
+  // The first file is the one to name, as clients often look for a file under several names
+  std::unique_lock lock(gameClient->m_critSection);
+  if (gameClient->m_missingFile.empty())
+    gameClient->m_missingFile = path;
+}
+
 double CGameClient::cb_get_playback_speed(KODI_HANDLE kodiInstance)
 {
   CGameClient* gameClient = static_cast<CGameClient*>(kodiInstance);
   if (!gameClient)
     return 0.0;
 
-  return gameClient->m_playbackSpeed;
+  return gameClient->m_fastForward->ClientSpeed(gameClient->m_playbackSpeed);
+}
+
+void CGameClient::cb_set_fast_forwarding(KODI_HANDLE kodiInstance, bool fastForward, double ratio)
+{
+  CGameClient* gameClient = static_cast<CGameClient*>(kodiInstance);
+  if (!gameClient)
+    return;
+
+  gameClient->m_fastForward->Request(fastForward, ratio, gameClient->m_playbackSpeed);
 }
 
 void CGameClient::cb_set_game_timing(KODI_HANDLE kodiInstance, const game_system_timing* timingInfo)
@@ -1424,6 +1420,16 @@ void CGameClient::cb_rc_on_subset_completed(KODI_HANDLE kodiInstance, const char
     return;
 
   gameClient->Cheevos().OnSubsetCompleted(title != nullptr ? title : "");
+}
+
+void CGameClient::cb_rc_on_achievement_sets(KODI_HANDLE kodiInstance,
+                                            const game_rc_achievement_sets* data)
+{
+  CGameClient* gameClient = static_cast<CGameClient*>(kodiInstance);
+  if (gameClient == nullptr || data == nullptr)
+    return;
+
+  gameClient->Cheevos().OnAchievementSets(*data);
 }
 
 std::pair<std::string, std::string> CGameClient::ParseLibretroName(const std::string& addonName)

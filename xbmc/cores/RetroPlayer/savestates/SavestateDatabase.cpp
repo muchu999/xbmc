@@ -17,7 +17,9 @@
 #include "filesystem/Directory.h"
 #include "filesystem/File.h"
 #include "filesystem/IFileTypes.h"
+#include "games/GameUtils.h"
 #include "games/dialogs/DialogGameDefines.h"
+#include "imagefiles/ImageFileURL.h"
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
 #include "utils/URIUtils.h"
@@ -29,7 +31,6 @@
 namespace
 {
 constexpr auto SAVESTATE_EXTENSION = ".sav";
-constexpr auto SAVESTATE_BASE_FOLDER = "special://home/saves/";
 } // namespace
 
 using namespace KODI;
@@ -189,7 +190,13 @@ void CSavestateDatabase::GetSavestateItem(const ISavestate& savestate,
   item.SetLabel(label);
   item.SetLabel2(label2);
   item.SetPath(savestatePath);
-  item.SetArt("screenshot", MakeThumbnailPath(savestatePath));
+  // Overwriting a savestate rewrites its thumbnail at the same path, so the
+  // time it was made is part of the image's URL. Otherwise the GUI keeps
+  // showing the image it already has for that path.
+  IMAGE_FILES::CImageFileURL thumbnail =
+      IMAGE_FILES::CImageFileURL::FromFile(MakeThumbnailPath(savestatePath));
+  thumbnail.AddOption("created", dateUTC.GetAsDBDateTime());
+  item.SetArt("screenshot", thumbnail.ToString());
   item.SetProperty(SAVESTATE_LABEL, savestate.Label());
   item.SetProperty(SAVESTATE_CAPTION, savestate.Caption());
   item.SetProperty(SAVESTATE_GAME_CLIENT, savestate.GameClientID());
@@ -270,11 +277,7 @@ std::string CSavestateDatabase::MakeThumbnailPath(const std::string& savestatePa
 
 std::string CSavestateDatabase::MakePath(const std::string& gamePath)
 {
-  if (!CreateFolderIfNotExists(SAVESTATE_BASE_FOLDER))
-    return "";
-
-  std::string gameName = URIUtils::GetFileName(gamePath);
-  std::string folderPath = URIUtils::AddFileToFolder(SAVESTATE_BASE_FOLDER, gameName);
+  const std::string folderPath = GAME::CGameUtils::GetGameFolder(gamePath);
 
   if (!CreateFolderIfNotExists(folderPath))
     return "";

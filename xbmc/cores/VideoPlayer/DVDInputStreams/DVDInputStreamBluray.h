@@ -66,7 +66,6 @@ public:
   int Read(uint8_t* buf, int buf_size) override;
   int ReadBlocks(uint8_t* buf, int lba, int num_blocks);
   int64_t Seek(int64_t offset, int whence) override;
-  void Abort() override;
   bool IsEOF() override;
   int64_t GetLength() override;
   int GetBlockSize() override { return 6144; }
@@ -192,14 +191,16 @@ protected:
   };
 
   SPlane m_planes[2];
-  enum EHoldState {
+  enum EHoldState
+  {
     HOLD_NONE = 0,
     HOLD_HELD,
     HOLD_DATA,
     HOLD_STILL,
     HOLD_ERROR,
-    HOLD_EXIT
   } m_hold = HOLD_NONE;
+  //! Units libbluray has failed to read since it last returned data
+  unsigned int m_readErrors = 0;
   BD_EVENT m_event;
 #ifdef HAVE_LIBBLURAY_BDJ
   struct bd_argb_buffer_s m_argb;
@@ -210,6 +211,12 @@ protected:
     void SetupPlayerSettings();
     void FreeTitleInfo();
     void FreeClipInfo();
+
+    /*!
+     * \brief Whether so many reads in a row have failed that the disc is taken to have gone.
+     * Only a successful read clears it, so no read is attempted once it is true.
+     */
+    bool HasGivenUpReading() const;
 
     /*!
      * \brief Read the clip information of a play item of the playlist being played.

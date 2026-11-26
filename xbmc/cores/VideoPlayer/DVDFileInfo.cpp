@@ -423,11 +423,14 @@ bool CDVDFileInfo::GetFileStreamDetails(CFileItem *pItem)
   CDVDDemux* pDemuxer = CDVDFactoryDemuxer::CreateDemuxer(pInputStream, true);
   if (pDemuxer)
   {
-    bool retVal = DemuxerToStreamDetails(
-        pInputStream, pDemuxer, pItem->GetVideoInfoTag()->m_streamDetails, strFileNameAndPath);
+    // Filled locally and published once, as the item may be shown while its streams are probed
+    CStreamDetails details;
+    bool retVal = DemuxerToStreamDetails(pInputStream, pDemuxer, details, strFileNameAndPath);
 
     if (!pInputStream->IsStreamType(DVDSTREAM_TYPE_PVRMANAGER))
-      ProcessExternalSubtitles(pItem);
+      ProcessExternalSubtitles(*pItem, details);
+
+    pItem->GetVideoInfoTag()->m_streamDetails = details;
 
     delete pDemuxer;
     return retVal;
@@ -670,12 +673,13 @@ bool CDVDFileInfo::DemuxerToStreamDetails(const std::shared_ptr<CDVDInputStream>
   return retVal;
 }
 
-void CDVDFileInfo::ProcessExternalSubtitles(CFileItem* item)
+void CDVDFileInfo::ProcessExternalSubtitles(const CFileItem& item, CStreamDetails& details)
 {
   std::vector<std::string> externalSubtitles;
-  const std::string videoPath = item->GetDynPath();
+  const std::string videoPath = item.GetSubtitleAnchorPath();
 
-  CUtil::ScanForExternalSubtitles(videoPath, externalSubtitles);
+  CUtil::ScanForExternalSubtitles(videoPath, externalSubtitles,
+                                  item.HasVideoInfoTag() ? item.GetVideoInfoTag() : nullptr);
 
   for (const auto& externalSubtitle : externalSubtitles)
   {
@@ -684,15 +688,13 @@ void CDVDFileInfo::ProcessExternalSubtitles(CFileItem* item)
     {
       std::string subFile;
       if (CUtil::FindVobSubPair(externalSubtitles, externalSubtitle, subFile))
-        AddExternalSubtitleToDetails(videoPath, item->GetVideoInfoTag()->m_streamDetails,
-                                     externalSubtitle, subFile);
+        AddExternalSubtitleToDetails(videoPath, details, externalSubtitle, subFile);
     }
     else
     {
       if (!CUtil::IsVobSub(externalSubtitles, externalSubtitle))
       {
-        AddExternalSubtitleToDetails(videoPath, item->GetVideoInfoTag()->m_streamDetails,
-                                     externalSubtitle);
+        AddExternalSubtitleToDetails(videoPath, details, externalSubtitle);
       }
     }
   }

@@ -100,8 +100,11 @@ void CGUIDialogPVRChannelsOSD::OnDeinitWindow(int nextWindowID)
 {
   if (m_group)
   {
-    CServiceBroker::GetPVRManager().Get<PVR::GUI::Channels>().SetSelectedChannelPath(
-        m_group->IsRadio(), m_viewControl.GetSelectedItemPath());
+    CPVRManager& pvrMgr = CServiceBroker::GetPVRManager();
+    // Group was switched without selecting one of its channels.
+    if (!pvrMgr.PlaybackState()->RestorePlayingChannelGroup())
+      pvrMgr.Get<PVR::GUI::Channels>().SetSelectedChannelPath(m_group->IsRadio(),
+                                                              m_viewControl.GetSelectedItemPath());
 
     // next OnInitWindow will set the group which is then selected
     m_group.reset();

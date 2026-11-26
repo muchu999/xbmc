@@ -11,6 +11,7 @@
 #include "settings/lib/ISettingCallback.h"
 #include "utils/Observer.h"
 
+#include <atomic>
 #include <string>
 
 class CSetting;
@@ -38,8 +39,36 @@ public:
   bool AutosaveEnabled();
   bool RewindEnabled();
   unsigned int MaxRewindTimeSec();
+  bool SyncPlaybackToDisplay();
+  double SyncToDisplayLimit();
   std::string GetRAUsername() const;
   std::string GetRAToken() const;
+
+  /*!
+   * \brief Whether achievements are earned in hardcore mode
+   *
+   * Hardcore awards double points, and in exchange the player goes without
+   * rewind, save state loading, cheats and slow motion. RetroAchievements does
+   * not allow a session begun in casual mode to carry on into hardcore, so
+   * turning this on part-way through restarts the game.
+   */
+  bool GetAchievementsHardcore() const;
+
+  /*!
+   * \brief Turn hardcore mode on or off
+   *
+   * Used to drop back to casual when a session resumes from a save state,
+   * which RetroAchievements requires.
+   */
+  void SetAchievementsHardcore(bool hardcore);
+
+  /*!
+   * \brief Whether hardcore mode is offered to the player
+   *
+   * RetroAchievements decide which clients may earn hardcore unlocks, so the
+   * setting stays hidden until they have approved Kodi.
+   */
+  bool AchievementsHardcoreOffered() const;
 
   /*!
    * \brief Whether achievements already earned can be triggered again
@@ -54,6 +83,24 @@ public:
    * for is easier to turn off than one nobody knew existed.
    */
   bool GetChallengeIndicator() const;
+
+  /*!
+   * \brief Whether the player turned an achievement set off
+   *
+   * RetroAchievements numbers sets across every game, so the set's ID alone
+   * says which one it is.
+   */
+  bool IsAchievementSetDisabled(unsigned int setId) const;
+
+  /*!
+   * \brief Whether the player turned any achievement set off
+   */
+  bool HasDisabledAchievementSets() const;
+
+  /*!
+   * \brief Remember whether the player turned an achievement set off
+   */
+  void SetAchievementSetDisabled(unsigned int setId, bool disabled);
 
   bool GetAchievementsLoggedIn() const;
 
@@ -79,6 +126,12 @@ private:
 
   // Construction parameters
   std::shared_ptr<CSettings> m_settings;
+
+  //! Hardcore mode, kept apart from the setting because it is read with a game
+  //! client's lock held. A change holds the setting's own lock while observers
+  //! run, and they take the client lock, so reading the setting there could
+  //! wait on a change that is waiting on the reader.
+  std::atomic<bool> m_achievementsHardcore{false};
 };
 
 } // namespace GAME

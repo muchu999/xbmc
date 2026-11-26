@@ -17,7 +17,6 @@
 #include "utils/log.h"
 
 #include <cstddef>
-#include <regex>
 
 using namespace KODI::SHADER;
 
@@ -44,6 +43,7 @@ bool CShaderPresetDX::CreateShaders()
         presetLUTsDX.emplace_back(std::move(presetLut));
     }
   }
+  m_luts = presetLUTsDX;
 
   const auto numPasses = static_cast<unsigned int>(m_passes.size());
   for (unsigned int shaderIdx = 0; shaderIdx < numPasses; ++shaderIdx)
@@ -53,8 +53,7 @@ bool CShaderPresetDX::CreateShaders()
     const std::string& shaderSource = pass.vertexSource; // Also contains fragment source
     const std::string& shaderPath = pass.sourcePath;
 
-    // Get only the parameters belonging to this specific shader
-    ShaderParameterMap passParameters = GetShaderParameters(pass.parameters, pass.vertexSource);
+    ShaderParameterMap passParameters = GetShaderParameters(pass.parameters);
 
     // Create the shader
     auto videoShader = std::make_unique<CShaderDX>();

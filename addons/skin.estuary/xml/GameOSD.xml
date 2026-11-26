@@ -126,6 +126,7 @@
 							<param name="id" value="1111" />
 							<param name="label" value="$LOCALIZE[35249]" />
 							<param name="icon" value="osd/fullscreen/buttons/saves.png" />
+							<visible>RetroPlayer.SupportsSavestates</visible>
 							<onclick>ActivateWindow(InGameSaves)</onclick>
 						</include>
 						<include content="GameOSDMenuButton">
@@ -148,6 +149,15 @@
 							<param name="icon" value="osd/fullscreen/buttons/rating.png" />
 							<description>Always show Achievements; its dialog explains sign-in requirements and missing achievement sets.</description>
 							<onclick>ActivateWindow(GameAchievements)</onclick>
+						</include>
+						<include content="GameOSDMenuButton">
+							<param name="id" value="1119" />
+							<param name="label" value="$LOCALIZE[35310]" />
+							<param name="icon" value="osd/fullscreen/buttons/information.png" />
+							<description>Manuals are shown by script.game.manuals, which is offered for install or enabling on first use. Every condition is read before any action runs, so the manual still opens in the same press once the add-on is installed or enabled.</description>
+							<onclick condition="!System.HasAddon(script.game.manuals)">InstallAddon(script.game.manuals)</onclick>
+							<onclick condition="System.HasAddon(script.game.manuals) + !System.AddonIsEnabled(script.game.manuals)">EnableAddon(script.game.manuals)</onclick>
+							<onclick>RunScript(script.game.manuals,game=$ESCINFO[Player.FilenameAndPath],title=$ESCINFO[RetroPlayer.Title])</onclick>
 						</include>
 						<include content="GameOSDMenuButton">
 							<param name="id" value="1118" />

@@ -1,13 +1,20 @@
 set(SOURCES TestBookmark.cpp
             TestFilenameAttributes.cpp
+            TestGUIWindowVideoBase.cpp
             TestPlayerControllerActions.cpp
             TestSetInfoTag.cpp
             TestStacks.cpp
             TestVideoDatabase.cpp
+            TestVideoDatabaseMigration.cpp
             TestVideoDbUrl.cpp
             TestVideoFileItemClassify.cpp
+            TestVideoInfoScanner.cpp
+            TestVideoInfoScannerArt.cpp
             TestVideoInfoTag.cpp
+            TestVideoItemArtworkHandler.cpp
             TestVideoStreamSelect.cpp
+            TestVideoTagLoaderFFmpeg.cpp
+            TestVideoTagLoaderNFO.cpp
             TestVideoThumbLoader.cpp
             TestVideoUtils.cpp)
 

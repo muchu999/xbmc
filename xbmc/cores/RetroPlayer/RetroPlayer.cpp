@@ -30,6 +30,8 @@
 #include "cores/RetroPlayer/savestates/ISavestate.h"
 #include "cores/RetroPlayer/savestates/SavestateDatabase.h"
 #include "cores/RetroPlayer/streams/RPStreamManager.h"
+#include "cores/VideoPlayer/VideoReferenceClock.h"
+#include "dialogs/GUIDialogKaiToast.h"
 #include "dialogs/GUIDialogYesNo.h"
 #include "games/GameServices.h"
 #include "games/GameSettings.h"
@@ -48,6 +50,8 @@
 #include "messaging/ApplicationMessenger.h"
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
+#include "settings/AdvancedSettings.h"
+#include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
 #include "windowing/WinSystem.h"
@@ -114,7 +118,7 @@ bool CRetroPlayer::Open(const CFileItem& file, const CPlayerOptions& options)
   // Asked before the game client is set up: the dialog runs the message loop,
   // and a game started from it once the client is playing would close this
   // player in the middle of opening
-  if (!bStandalone)
+  if (!bStandalone && !savestatePath.empty())
   {
     CSavestateDatabase savestateDb;
 
@@ -152,6 +156,20 @@ bool CRetroPlayer::Open(const CFileItem& file, const CPlayerOptions& options)
 
   m_processInfo->SetDataCache(&CServiceBroker::GetDataCacheCore());
   m_processInfo->ResetInfo();
+  // The screen's refresh rate follows its vblanks, whether or not videos are
+  // synced to the display
+  m_displayClock = std::make_unique<CVideoReferenceClock>(true);
+  m_processInfo->GetDisplayPacing().SetRefreshRateSource([clock = m_displayClock.get()]
+                                                         { return clock->GetRefreshRate(); });
+  m_processInfo->GetDisplayPacing().SetEnabled(
+      m_gameServices.GameSettings().SyncPlaybackToDisplay());
+  m_processInfo->GetDisplayPacing().SetMaxRateDifference(
+      m_gameServices.GameSettings().SyncToDisplayLimit());
+  const float pacingMarginMs =
+      CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_gamesPacingMarginMs;
+  m_processInfo->GetDisplayPacing().SetMargin(
+      std::chrono::duration_cast<CDisplayPacing::Clock::duration>(
+          std::chrono::duration<float, std::milli>(pacingMarginMs)));
 
   m_guiMessenger = std::make_unique<CGUIGameMessenger>(*m_processInfo);
   m_renderManager = std::make_unique<CRPRenderManager>(*m_processInfo);
@@ -234,6 +252,8 @@ bool CRetroPlayer::Open(const CFileItem& file, const CPlayerOptions& options)
       m_gameClient->Unload();
     m_gameClient.reset();
     m_streamManager.reset();
+    m_processInfo->GetDisplayPacing().SetRefreshRateSource({});
+    m_displayClock.reset();
   }
 
   return bSuccess;
@@ -269,9 +289,7 @@ bool CRetroPlayer::CloseFile(bool reopen /* = false */)
       CLog::Log(LOGDEBUG, "RetroPlayer[SAVE]: Failed to save state at close");
   }
 
-  if (m_playback)
-    m_playback->Deinitialize();
-  m_playback.reset();
+  ResetPlayback();
 
   if (m_input)
     m_input->StopAgentManager();
@@ -302,8 +320,9 @@ bool CRetroPlayer::CloseFile(bool reopen /* = false */)
     m_processInfo->ResetInfo();
   }
   m_processInfo.reset();
-  CLog::Log(LOGDEBUG, "RetroPlayer[PLAYER]: Playback ended");
-  m_callback.OnPlayBackEnded();
+  m_displayClock.reset();
+  CLog::Log(LOGDEBUG, "RetroPlayer[PLAYER]: Playback stopped");
+  m_callback.OnPlayBackStopped();
 
   return true;
 }
@@ -431,6 +450,9 @@ uint64_t CRetroPlayer::GetTotalTime()
 
 void CRetroPlayer::SetSpeed(float speed)
 {
+  if (RefuseSpeedInHardcore(static_cast<double>(speed)))
+    return;
+
   if (m_playback->GetSpeed() != static_cast<double>(speed))
   {
     if (speed == 1.0f)
@@ -505,6 +527,8 @@ void CRetroPlayer::FrameMove()
 
   if (m_playbackControl)
     m_playbackControl->FrameMove();
+
+  LeaveSpeedRefusedInHardcore();
 
   if (m_processInfo)
     m_processInfo->SetPlayTimes(0, GetTime(), 0, GetTotalTime());
@@ -600,12 +624,6 @@ bool CRetroPlayer::LoadSavestate(const std::string& savestatePath)
   return false;
 }
 
-void CRetroPlayer::FreeSavestateResources(const std::string& savestatePath)
-{
-  if (m_renderManager)
-    m_renderManager->ClearVideoFrame(savestatePath);
-}
-
 void CRetroPlayer::CloseOSDCallback()
 {
   CloseOSD();
@@ -613,6 +631,9 @@ void CRetroPlayer::CloseOSDCallback()
 
 void CRetroPlayer::SetPlaybackSpeed(double speed)
 {
+  if (RefuseSpeedInHardcore(speed))
+    return;
+
   if (m_playback)
   {
     if (m_playback->GetSpeed() != speed)
@@ -651,6 +672,42 @@ void CRetroPlayer::RequestAutosave()
   m_playback->RequestAutosave();
 }
 
+bool CRetroPlayer::RefuseSpeedInHardcore(double speed) const
+{
+  if (!m_gameServices.GameSettings().GetAchievementsHardcore())
+    return false;
+
+  // Rewind runs the game backwards, so it arrives here as a negative speed
+  if (speed < 0.0)
+  {
+    CLog::Log(LOGDEBUG, "RetroPlayer[PLAYER]: Refusing to rewind in hardcore mode");
+    GAME::CGameUtils::NotifyBlockedByHardcore(35309); // "Rewind"
+    return true;
+  }
+
+  if (speed > 0.0 && speed < 1.0)
+  {
+    CLog::Log(LOGDEBUG, "RetroPlayer[PLAYER]: Refusing to slow down in hardcore mode");
+    GAME::CGameUtils::NotifyBlockedByHardcore(35701); // "Slow motion"
+    return true;
+  }
+
+  return false;
+}
+
+void CRetroPlayer::LeaveSpeedRefusedInHardcore()
+{
+  if (!m_playback || !m_gameServices.GameSettings().GetAchievementsHardcore())
+    return;
+
+  const double speed = m_playback->GetSpeed();
+  if (speed < 0.0 || (speed > 0.0 && speed < 1.0))
+  {
+    CLog::Log(LOGDEBUG, "RetroPlayer[PLAYER]: Hardcore mode started, returning to normal speed");
+    SetPlaybackSpeed(1.0);
+  }
+}
+
 void CRetroPlayer::SetSpeedInternal(double speed)
 {
   OnSpeedChange(speed);
@@ -658,7 +715,13 @@ void CRetroPlayer::SetSpeedInternal(double speed)
   if (speed == 0.0)
     m_playback->PauseAsync();
   else
+  {
     m_playback->SetSpeed(speed);
+
+    // Rewinding runs the game loop slower than the speed shown
+    if (speed < 0.0 && m_gameClient && m_gameClient->RequiresGameLoop())
+      m_renderManager->SetSpeed(m_playback->GetSpeed());
+  }
 }
 
 void CRetroPlayer::OnSpeedChange(double newSpeed)
@@ -681,8 +744,8 @@ void CRetroPlayer::CreatePlayback(const std::string& savestatePath)
   {
     m_playback->Deinitialize();
     m_playback = std::make_unique<CReversiblePlayback>(
-        m_gameClient.get(), *m_renderManager, *m_guiMessenger, m_gameClient->GetFrameRate(),
-        m_gameClient->GetSerializeSize());
+        m_gameClient.get(), *m_renderManager, *m_guiMessenger, m_processInfo->GetDisplayPacing(),
+        m_gameClient->GetFrameRate(), m_gameClient->GetSerializeSize());
   }
   else
     ResetPlayback();
@@ -693,6 +756,21 @@ void CRetroPlayer::CreatePlayback(const std::string& savestatePath)
     if (!bStandalone)
     {
       CLog::Log(LOGDEBUG, "RetroPlayer[SAVE]: Loading savestate");
+
+      // RetroAchievements requires a resumed session to drop to casual: the
+      // player did not reach the state being resumed from in this session.
+      // Done before the load, which is otherwise refused while hardcore is on.
+      GAME::CGameSettings& gameSettings = m_gameServices.GameSettings();
+      if (gameSettings.GetAchievementsHardcore())
+      {
+        CLog::Log(LOGINFO, "RetroPlayer[SAVE]: Resuming from a savestate, dropping to casual mode");
+        gameSettings.SetAchievementsHardcore(false);
+
+        // "RetroAchievements", "Hardcore mode turned off. Achievements will be..."
+        const auto& strings = CServiceBroker::GetResourcesComponent().GetLocalizeStrings();
+        CGUIDialogKaiToast::QueueNotification(CGUIDialogKaiToast::Info, strings.Get(35264),
+                                              strings.Get(35306));
+      }
 
       if (!LoadSavestate(savestatePath))
         CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Failed to load savestate");
@@ -713,7 +791,8 @@ void CRetroPlayer::ResetPlayback()
 
 void CRetroPlayer::OpenOSD()
 {
-  CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_DIALOG_GAME_OSD);
+  // Posted, as the OSD is modal and a pause can come in a message its sender waits on
+  CServiceBroker::GetAppMessenger()->PostMsg(TMSG_GUI_ACTIVATE_WINDOW, WINDOW_DIALOG_GAME_OSD, 0);
 }
 
 void CRetroPlayer::CloseOSD()

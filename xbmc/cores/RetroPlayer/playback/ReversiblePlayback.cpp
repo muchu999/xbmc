@@ -21,6 +21,7 @@
 #include "games/AchievementRuntime.h"
 #include "games/GameServices.h"
 #include "games/GameSettings.h"
+#include "games/GameUtils.h"
 #include "games/addons/GameClient.h"
 #include "games/addons/disc/GameClientDiscModel.h"
 #include "games/addons/disc/GameClientDiscs.h"
@@ -40,15 +41,31 @@ using GAME::RestoreResult;
 
 #define REWIND_FACTOR 0.25 // Rewind at 25% of gameplay speed
 
+namespace
+{
+/*!
+ * \brief Whether hardcore mode is currently withholding gameplay assistance
+ *
+ * RetroAchievements requires save state loading, rewind, slow motion and
+ * cheats to be unavailable while hardcore is on. Saving a state is still
+ * allowed, and so is fast forward.
+ */
+bool HardcoreRestrictionsApply()
+{
+  return CServiceBroker::GetGameServices().GameSettings().GetAchievementsHardcore();
+}
+} // namespace
+
 CReversiblePlayback::CReversiblePlayback(GAME::CGameClient* gameClient,
                                          CRPRenderManager& renderManager,
                                          CGUIGameMessenger& guiMessenger,
+                                         CDisplayPacing& displayPacing,
                                          double fps,
                                          size_t serializeSize)
   : m_gameClient(gameClient),
     m_renderManager(renderManager),
     m_guiMessenger(guiMessenger),
-    m_gameLoop(this, fps),
+    m_gameLoop(this, fps, &displayPacing),
     m_savestateDatabase(new CSavestateDatabase),
     m_memorySize(serializeSize),
     m_gamePath(gameClient->GetGamePath()),
@@ -156,6 +173,17 @@ void CReversiblePlayback::SeekTimeMs(unsigned int timeMs)
   }
   else if (offsetFrames < 0)
   {
+    // Seeking backwards is a rewind by another name, and it reaches
+    // RewindFrames() without passing through SetSpeed(). Reachable from
+    // JSON-RPC and the Python player API, so it is guarded in its own right
+    // rather than relying on the buffer being empty.
+    if (HardcoreRestrictionsApply())
+    {
+      CLog::Log(LOGDEBUG, "RetroPlayer[SAVE]: Refusing to seek backwards in hardcore mode");
+      GAME::CGameUtils::NotifyBlockedByHardcore(35309); // "Rewind"
+      return;
+    }
+
     const uint64_t frames = std::min(static_cast<uint64_t>(-offsetFrames), m_pastFrameCount);
     if (frames > 0)
     {
@@ -258,7 +286,6 @@ std::string CReversiblePlayback::CreateSavestate(bool autosave, const std::strin
   snapshot->captureUs = 0;
   snapshot->path = GetSavestatePath(autosave, savestatePath, snapshot->created);
   const std::string savePath = snapshot->path;
-  m_renderManager.CacheVideoFrame(savePath);
   m_saveWorker->Submit(snapshot);
   return savePath;
 }
@@ -277,7 +304,7 @@ void CReversiblePlayback::CaptureMetadata(Snapshot& snapshot)
   {
     if (m_gameClient->SupportsDiscControl())
     {
-      m_gameClient->Discs().RefreshDiscStateLive();
+      m_gameClient->Discs().RefreshDiscState();
       snapshot.discState = m_gameClient->Discs().GetDiscsForSnapshot().GetState();
     }
     m_gameClient->SerializeAchievementState(snapshot.achievements);
@@ -348,9 +375,6 @@ bool CReversiblePlayback::CommitSavestate(const Snapshot& snapshot)
   savestate->SetGameClientID(m_gameClientId);
   savestate->SetGameClientVersion(m_gameClientVersion);
 
-  if (!snapshot.video.empty())
-    m_renderManager.CacheVideoFrame(savePath, snapshot.video);
-  m_renderManager.SaveVideoFrame(savePath, *savestate, snapshot.video);
   savestate->Finalize();
   bool success;
   {
@@ -358,7 +382,7 @@ bool CReversiblePlayback::CommitSavestate(const Snapshot& snapshot)
     success = m_savestateDatabase->AddSavestate(savePath, m_gamePath, *savestate);
   }
   if (success)
-    m_renderManager.SaveThumbnail(CSavestateDatabase::MakeThumbnailPath(savePath));
+    m_renderManager.SaveThumbnail(CSavestateDatabase::MakeThumbnailPath(savePath), snapshot.video);
   else
     CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Failed to write savestate");
   m_guiMessenger.RefreshSavestates(savePath, savestate.get());
@@ -375,6 +399,16 @@ bool CReversiblePlayback::CommitSavestate(const Snapshot& snapshot)
 
 bool CReversiblePlayback::LoadSavestate(const std::string& savestatePath)
 {
+  // Every route that loads a state comes through here - the in-game dialog,
+  // JSON-RPC, the Python player API - so hardcore is answered once, rather
+  // than at each caller. Creating a state is still allowed.
+  if (HardcoreRestrictionsApply())
+  {
+    CLog::Log(LOGINFO, "RetroPlayer[SAVE]: Refusing to load a savestate in hardcore mode");
+    GAME::CGameUtils::NotifyBlockedByHardcore(35308); // "Loading save states"
+    return false;
+  }
+
   const size_t memorySize =
       m_gameClient->GetSerializeSize(GAME::CGameClient::SerializeSizeMode::Restore);
 
@@ -392,17 +426,20 @@ bool CReversiblePlayback::LoadSavestate(const std::string& savestatePath)
   std::unique_ptr<ISavestate> savestate = CSavestateDatabase::AllocateSavestate();
   if (m_savestateDatabase->GetSavestate(savestatePath, *savestate))
   {
-    if (!savestate->PrepareMemoryData(memorySize))
+    // The size a client reports can change as it runs, so a savestate is
+    // restored at its own size and the client decides whether it fits
+    const size_t savedSize = savestate->GetMemorySize();
+
+    if (!savestate->PrepareMemoryData(savedSize))
     {
       CLog::Log(LOGERROR, "RetroPlayer[SAVE]: Failed to prepare memory data");
     }
-    else if (savestate->GetMemorySize() != memorySize)
-    {
-      CLog::Log(LOGERROR, "Invalid memory size, got {}, expected {}", savestate->GetMemorySize(),
-                memorySize);
-    }
     else
     {
+      if (savedSize != memorySize)
+        CLog::Log(LOGDEBUG, "RetroPlayer[SAVE]: Savestate size is {}, client reports {}", savedSize,
+                  memorySize);
+
       std::optional<GAME::CGameClientDiscModel> discModel;
       if (const auto discState = savestate->GetDiscState())
       {
@@ -423,7 +460,7 @@ bool CReversiblePlayback::LoadSavestate(const std::string& savestatePath)
                   discState->slots.size(), discState->selectedSlot, discState->trayEjected);
       }
 
-      const RestoreResult result = m_gameClient->Deserialize(savestate->GetMemoryData(), memorySize,
+      const RestoreResult result = m_gameClient->Deserialize(savestate->GetMemoryData(), savedSize,
                                                              discModel ? &*discModel : nullptr);
       if (result == RestoreResult::Restored)
       {
@@ -453,12 +490,16 @@ bool CReversiblePlayback::LoadSavestate(const std::string& savestatePath)
           const uint64_t maxFrames = m_memoryStream->MaxFrameCount();
           m_memoryStream->Init(memorySize, maxFrames);
           m_discStateHistory.Clear();
-          std::memcpy(m_memoryStream->BeginFrame(), savestate->GetMemoryData(), memorySize);
-          const uint32_t discStateId =
-              m_gameClient->SupportsDiscControl()
-                  ? m_discStateHistory.Intern(m_gameClient->Discs().GetDiscsForSnapshot())
-                  : 0;
-          m_memoryStream->SubmitFrame(discStateId, savestate->TimestampFrames());
+          // Rewind frames are the client's current size
+          if (savedSize == memorySize)
+          {
+            std::memcpy(m_memoryStream->BeginFrame(), savestate->GetMemoryData(), memorySize);
+            const uint32_t discStateId =
+                m_gameClient->SupportsDiscControl()
+                    ? m_discStateHistory.Intern(m_gameClient->Discs().GetDiscsForSnapshot())
+                    : 0;
+            m_memoryStream->SubmitFrame(discStateId, savestate->TimestampFrames());
+          }
           UpdatePlaybackStats();
         }
         m_totalFrameCount = savestate->TimestampFrames();
@@ -560,7 +601,7 @@ void CReversiblePlayback::AddFrame()
       uint32_t discStateId = 0;
       if (m_gameClient->SupportsDiscControl())
       {
-        m_gameClient->Discs().RefreshDiscStateLive();
+        m_gameClient->Discs().RefreshDiscState();
         discStateId = m_discStateHistory.Intern(m_gameClient->Discs().GetDiscsForSnapshot());
       }
       m_memoryStream->SubmitFrame(discStateId, m_totalFrameCount + 1);
@@ -768,7 +809,9 @@ void CReversiblePlayback::UpdateMemoryStream()
 
   GAME::CGameSettings& gameSettings = CServiceBroker::GetGameServices().GameSettings();
 
-  const bool rewindEnabled = gameSettings.RewindEnabled();
+  // Hardcore forbids rewind, so the buffer isn't allocated at all. It costs a
+  // fraction of the savestate size for every frame of the rewind window.
+  const bool rewindEnabled = gameSettings.RewindEnabled() && !HardcoreRestrictionsApply();
   const size_t memorySize = rewindEnabled ? m_gameClient->GetSerializeSize() : 0;
 
   if (rewindEnabled && memorySize > 0)

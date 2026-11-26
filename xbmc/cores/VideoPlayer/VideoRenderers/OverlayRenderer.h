@@ -214,11 +214,19 @@ namespace OVERLAY {
       int overscanTop{0};
     };
 
+    //! \brief Reload the settings and rebuild the style when they have changed.
+    void UpdateSubtitleStyle();
+
     /*!
-     * \brief Establish the subtitle style and position for the current frame.
+     * \brief Track changes to the subtitle position for the current frame.
      * \param[out] resolution the display values read while doing so
      */
-    void UpdateSubtitleStyleAndPosition(SubtitleResolution& resolution);
+    void UpdateSubtitlePosition(SubtitleResolution& resolution);
+
+    //! \brief The libass render options for \p overlay drawn with \p style on the current frame.
+    KODI::SUBTITLES::STYLE::renderOpts GetRenderOptions(const CDVDOverlayLibass& overlay,
+                                                        const KODI::SUBTITLES::STYLE::style& style,
+                                                        const SubtitleResolution& resolution) const;
 
     enum PositonResInfoState
     {
@@ -256,5 +264,8 @@ namespace OVERLAY {
     // to detect arrival/disappearance transitions (image/SPU have no
     // per-frame change signal of their own, unlike libass detect_change).
     bool m_prevHadImageSpu{false};
+    // Whether last frame had libass output. detect_change cannot report an
+    // overlay that is no longer added at all, e.g. once subtitles are hidden.
+    bool m_prevHadLibassImages{false};
   };
 }

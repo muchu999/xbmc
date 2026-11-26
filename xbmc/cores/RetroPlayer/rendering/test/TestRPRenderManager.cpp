@@ -17,6 +17,7 @@
 #include "games/addons/streams/GameClientStreamHwFramebuffer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
@@ -137,6 +138,8 @@ public:
   std::function<void()> onFlush;
   std::function<void()> onRendererFlush;
   CRPBaseRenderer* renderer{nullptr};
+  unsigned int rendererCreates{0};
+  unsigned int rendererDestroys{0};
 
 protected:
   bool ConfigureInternal() override
@@ -160,6 +163,7 @@ class CTestRenderer : public CRPBaseRenderer
 {
 public:
   using CRPBaseRenderer::CRPBaseRenderer;
+  ~CTestRenderer() override { ++static_cast<CTestPool*>(GetBufferPool())->rendererDestroys; }
   bool Supports(RENDERFEATURE) const override { return false; }
   SCALINGMETHOD GetDefaultScalingMethod() const override { return SCALINGMETHOD::NEAREST; }
 
@@ -170,7 +174,7 @@ protected:
     return true;
   }
 
-  void RenderInternal(bool, uint8_t) override {}
+  void RenderInternal(uint8_t) override {}
   void FlushInternal() override
   {
     const auto& callback = static_cast<CTestPool*>(GetBufferPool())->onRendererFlush;
@@ -197,6 +201,7 @@ public:
   {
     auto* renderer = new CTestRenderer(settings, context, pool);
     static_cast<CTestPool*>(pool.get())->renderer = renderer;
+    ++static_cast<CTestPool*>(pool.get())->rendererCreates;
     return renderer;
   }
   RenderBufferPoolVector CreateBufferPools(CRenderContext&) override { return m_pools; }
@@ -329,6 +334,30 @@ TEST_F(TestRPRenderManager, ResetDuringRendererLookup)
   ExpectVideoBuffer();
 }
 
+TEST_F(TestRPRenderManager, UnusedRendererReleasesItsTextures)
+{
+  auto& manager = m_environment.Renderer();
+  unsigned int rendererFlushes = 0;
+  m_pool->onRendererFlush = [&rendererFlushes] { ++rendererFlushes; };
+  Start();
+
+  for (unsigned int frame = 0; frame < 120; ++frame)
+  {
+    manager.FrameMove();
+    RenderControl();
+  }
+  EXPECT_EQ(m_pool->rendererCreates, 1);
+  EXPECT_EQ(rendererFlushes, 0);
+
+  // A frame without it releases its textures, and the same renderer draws again
+  manager.FrameMove();
+  manager.FrameMove();
+  RenderControl();
+  EXPECT_EQ(rendererFlushes, 1);
+  EXPECT_EQ(m_pool->rendererCreates, 1);
+  EXPECT_EQ(m_pool->rendererDestroys, 0);
+}
+
 TEST_F(TestRPRenderManager, SoftwareCallsDoNotBindPools)
 {
   auto& manager = m_environment.Renderer();
@@ -412,6 +441,25 @@ TEST_F(TestRPRenderManager, FramebufferGrowthPreservesBufferAndOtherAxis)
   EXPECT_EQ(buffer->GetHeight(), 928);
   manager.Flush();
   EXPECT_EQ(manager.GetCurrentFramebuffer(320, 240), framebuffer);
+  manager.DestroyContext();
+}
+
+TEST_F(TestRPRenderManager, ClientThreadGetsFramebufferDuringClientCall)
+{
+  auto& manager = m_environment.Renderer();
+  m_pool->hardware = true;
+  ASSERT_TRUE(manager.CreateContext({}));
+  ASSERT_TRUE(manager.Create(480, 272));
+  const auto framebuffer = manager.GetCurrentFramebuffer(480, 272);
+  ASSERT_NE(framebuffer, 0);
+  ASSERT_TRUE(manager.BeginClientFrame());
+  auto fromClientThread = std::async(std::launch::async, [&manager]
+                                     { return manager.GetCurrentFramebuffer(480, 270); });
+  const bool answered =
+      fromClientThread.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  manager.EndClientFrame();
+  EXPECT_TRUE(answered);
+  EXPECT_EQ(fromClientThread.get(), framebuffer);
   manager.DestroyContext();
 }
 
@@ -742,6 +790,40 @@ TEST_F(TestRPRenderManager, HardwareProcessDimensionsFollowFramesWithoutResizing
   processInfo.SetDataCache(nullptr);
 }
 
+TEST_F(TestRPRenderManager, HardwareFrameLargerThanReportedGrowsFramebuffer)
+{
+  auto& manager = m_environment.Renderer();
+  m_pool->hardware = true;
+  manager.Initialize();
+  CRetroPlayerRendering rendering(manager, m_environment.ProcessInfo());
+  const HwFramebufferProperties properties{
+      GAME_HW_CONTEXT_OPENGL_CORE, false, false, true, 3, 3, false, false, 640, 448, 0.0f};
+  ASSERT_TRUE(rendering.OpenStream(properties));
+  HwFramebufferBuffer buffer;
+  ASSERT_TRUE(rendering.GetStreamBuffer(640, 448, buffer));
+  ASSERT_TRUE(manager.BeginClientFrame());
+
+  for (const auto& invalid :
+       {HwFramebufferPacket{0, 512, 512, 0.0f, VideoRotation::ROTATION_0},
+        HwFramebufferPacket{buffer.framebuffer + 1, 512, 512, 0.0f, VideoRotation::ROTATION_0},
+        HwFramebufferPacket{buffer.framebuffer, 800, 0, 0.0f, VideoRotation::ROTATION_0}})
+    rendering.AddStreamData(invalid);
+  EXPECT_EQ(m_pool->clientBuffer->GetWidth(), 640);
+  EXPECT_EQ(m_pool->clientBuffer->GetHeight(), 448);
+
+  const HwFramebufferPacket packet{buffer.framebuffer, 512, 512, 0.0f, VideoRotation::ROTATION_0};
+  rendering.AddStreamData(packet);
+  EXPECT_EQ(m_pool->captures, 0);
+  EXPECT_EQ(m_pool->clientBuffer->GetWidth(), 640);
+  EXPECT_EQ(m_pool->clientBuffer->GetHeight(), 512);
+
+  rendering.AddStreamData(packet);
+  ASSERT_EQ(m_pool->captures, 1);
+  EXPECT_EQ(m_pool->captured->GetHeight(), 512);
+  manager.EndClientFrame();
+  rendering.CloseStream();
+}
+
 TEST_F(TestRPRenderManager, HardwareStreamPropagatesDebugContextRequest)
 {
   m_pool->hardware = true;
@@ -928,10 +1010,8 @@ TEST_F(TestRPStreamHandoff, FinalSoftwareStreamResourcesAreReleasedAtSessionTear
   auto* pendingBuffer = m_swPool->lastBuffer;
   ASSERT_EQ(published->References(), 1);
   ASSERT_EQ(pendingBuffer->References(), 1);
-  m_environment.Renderer().CacheVideoFrame("handoff.sav");
-  ASSERT_EQ(published->References(), 2);
   m_session->CloseStream(std::move(software));
-  EXPECT_EQ(published->References(), 2);
+  EXPECT_EQ(published->References(), 1);
   EXPECT_EQ(pendingBuffer->References(), 1);
   ExpectConfigured(true);
   m_session.reset();

@@ -645,12 +645,35 @@ unsigned int CAEStreamParser::SyncDTS(uint8_t* data, unsigned int size)
       // set the type according to core or not
       if (m_coreOnly)
         dataType = CAEStreamInfo::STREAM_TYPE_DTSHD_CORE;
-      else if (hd_sync == DTS_PREAMBLE_XLL)
+      // At its peak bit rate an MA stream lets XLL frames straddle substream frames, so the word
+      // after the header is then XLL payload, not a sync word. That payload is low-entropy and
+      // regularly contains 0x5a5a5a5a, the XCH sync. Taking it as an HRA stream switches the
+      // packer to a 2048 period whose burst the frame does not fit. One parser serves one stream
+      // (Reset() only flushes), so once the stream is known to be MA - from the codec, which has
+      // it from the demuxer's profile, or from an XLL sync seen here - it stays MA.
+      else if (hd_sync == DTS_PREAMBLE_XLL || m_dtsHDMA)
+      {
         dataType = CAEStreamInfo::STREAM_TYPE_DTSHD_MA;
+        m_dtsHDMA = true;
+        m_skipCount = 0;
+      }
       else if (hd_sync == DTS_PREAMBLE_XCH || hd_sync == DTS_PREAMBLE_XXCH ||
                hd_sync == DTS_PREAMBLE_X96K || hd_sync == DTS_PREAMBLE_XBR ||
                hd_sync == DTS_PREAMBLE_LBR)
-        dataType = CAEStreamInfo::STREAM_TYPE_DTSHD;
+      {
+        // DTS-HD is only confirmed if no other preceding format detected or format is
+        // already DTS-HD or it's the third DTS-HD syncword, with no DTS-HD MA in between.
+        if (m_info.m_type == CAEStreamInfo::STREAM_TYPE_NULL ||
+            m_info.m_type == CAEStreamInfo::STREAM_TYPE_DTSHD || m_skipCount > 1)
+        {
+          dataType = CAEStreamInfo::STREAM_TYPE_DTSHD;
+        }
+        else
+        {
+          m_skipCount++;
+          dataType = m_info.m_type;
+        }
+      }
       else
         dataType = m_info.m_type;
 

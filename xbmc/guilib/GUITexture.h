@@ -127,6 +127,7 @@ public:
   {
     return m_isAllocated == NORMAL_FAILED || m_isAllocated == LARGE_FAILED;
   }
+  bool IsLoading() const { return m_isAllocated == LARGE && (!m_texture.size() || m_largeInterim); }
   bool ReadyToRender() const;
 
 protected:
@@ -173,6 +174,7 @@ protected:
   // size used to get and release image from LargeTextureManager
   int m_requestWidth = REQUEST_SIZE_UNSET;
   int m_requestHeight = REQUEST_SIZE_UNSET;
+  bool m_largeInterim{false};
   static constexpr int REQUEST_SIZE_UNSET = -1;
 
   CRect m_vertex;       // vertex coords to render

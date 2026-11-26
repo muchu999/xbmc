@@ -12,6 +12,7 @@ set(SOURCES TestAlarmClock.cpp
             TestCrc32.cpp
             TestDatabaseUtils.cpp
             TestDigest.cpp
+            TestDolbyVisionRpu.cpp
             TestEndianSwap.cpp
             TestExecString.cpp
             TestFileExtensionProvider.cpp
@@ -19,6 +20,7 @@ set(SOURCES TestAlarmClock.cpp
             TestFileUtils.cpp
             TestGlobalsHandling.cpp
             TestGPUInfo.cpp
+            TestHevcSei.cpp
             TestHTMLUtil.cpp
             TestHttpHeader.cpp
             TestHttpParser.cpp

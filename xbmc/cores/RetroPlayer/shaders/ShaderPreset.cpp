@@ -9,6 +9,7 @@
 #include "ShaderPreset.h"
 
 #include "IShader.h"
+#include "IShaderLut.h"
 #include "IShaderTexture.h"
 #include "ServiceBroker.h"
 #include "ShaderPresetFactory.h"
@@ -17,7 +18,7 @@
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
-#include <regex>
+#include <cmath>
 
 using namespace KODI::SHADER;
 
@@ -71,7 +72,8 @@ bool CShaderPreset::RenderUpdate(IShaderTexture& sourceTexture, IShaderTexture& 
   m_context.SetViewPort(viewPort);
   m_context.SetScissors(viewPort);
 
-  m_frameCount += static_cast<float>(m_speed);
+  // Frames played in reverse still pass
+  m_frameCount += static_cast<float>(std::abs(m_speed));
   return true;
 }
 
@@ -235,6 +237,11 @@ void CShaderPreset::CalculateScaledSize(const KODI::SHADER::ShaderPass& pass,
           pass.fbo.scaleY.scale != 0.0f ? pass.fbo.scaleY.scale * prevSize.y : prevSize.y;
       break;
   }
+
+  // The pass renders to a texture of whole pixels, so its shaders must be
+  // given that size rather than a fractional one
+  scaledSize.x = std::floor(scaledSize.x);
+  scaledSize.y = std::floor(scaledSize.y);
 }
 
 void CShaderPreset::DisposeShaders()
@@ -242,7 +249,20 @@ void CShaderPreset::DisposeShaders()
   DisposeShaderTextures();
 
   m_pShaders.clear();
+  m_luts.clear();
   m_passes.clear();
+}
+
+void CShaderPreset::ReleaseTextures()
+{
+  for (const auto& shader : m_pShaders)
+    shader->ReleaseTextureReferences();
+
+  DisposeShaderTextures();
+  for (const auto& lut : m_luts)
+    lut->ReleaseTexture();
+
+  m_bPresetNeedsUpdate = true;
 }
 
 void CShaderPreset::DisposeShaderTextures()
@@ -256,39 +276,19 @@ bool CShaderPreset::HasPathFailed(const std::string& path) const
 }
 
 ShaderParameterMap CShaderPreset::GetShaderParameters(
-    const std::vector<ShaderParameter>& parameters, const std::string& sourceStr) const
+    const std::vector<ShaderParameter>& parameters) const
 {
-  static const std::regex pragmaParamRegex("#pragma parameter ([a-zA-Z_][a-zA-Z0-9_]*)");
+  // Parameters belong to the whole preset, not just the pass that declares
+  // them with "#pragma parameter"
+  ShaderParameterMap shaderParams;
 
-  std::vector<std::string> validParams;
-  std::smatch matches;
-
-  auto searchStart(sourceStr.cbegin());
-  while (regex_search(searchStart, sourceStr.cend(), matches, pragmaParamRegex))
+  for (const ShaderParameter& parameter : parameters)
   {
-    validParams.push_back(matches[1].str());
-    searchStart += matches.position() + matches.length();
+    // The add-on has already handled parsing and overwriting default
+    // parameter values from the preset file. The final value we
+    // should use is in the 'current' field.
+    shaderParams[parameter.strId] = parameter.current;
   }
 
-  ShaderParameterMap matchParams;
-
-  // For each param found in the source code
-  for (const std::string& match : validParams)
-  {
-    // For each param found in the preset file
-    for (const ShaderParameter& parameter : parameters)
-    {
-      // Check if they match
-      if (match == parameter.strId)
-      {
-        // The add-on has already handled parsing and overwriting default
-        // parameter values from the preset file. The final value we
-        // should use is in the 'current' field.
-        matchParams[match] = parameter.current;
-        break;
-      }
-    }
-  }
-
-  return matchParams;
+  return shaderParams;
 }
